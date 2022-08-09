@@ -8,7 +8,7 @@ Comparison of gene and protein values
 
 ```{r}
 
-##load libraries, ncounter output raw data file, samples meta data file (same datafile used in cell dive analysis), counts/percentages for markers in total cells (DAPI) and tumor cells}
+#load libraries, nCounter output raw data file, samples meta data file, counts/percentages for markers in total cells (DAPI) and tumor cells
 
 library(openxlsx)
 library(readxl)
@@ -24,13 +24,18 @@ library(tidyverse)
 library(dendsort)
 library(ggrepel)
 library(mosaic)
+library(gplots)
+library(cowplot)
 
-rawcounts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/Hodgkin_nanostring/NanostringResults/09631_G_RawData.csv"
-samples_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/Hodgkin_nanostring/HodgkinLymphoma_Samples__V2.xlsx"
-pDAPI_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/Hodgkin_nanostring/220124_all_marker_counts_per_sample.xlsx"
-pTumor_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/Hodgkin_nanostring/220124_tumor_functional_marker_counts_per_sample.xlsx"
+rawcounts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/NanostringResults/09631_G_RawData.csv"
+normcounts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/NanostringResults/06931_G_NormalizedData.csv"
+samples_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/HodgkinLymphoma_Samples__V3.xlsx"
+pDAPI_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/results/data/220720_all_marker_counts_per_sample.xlsx"
+pTumor_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/results/data/220720_tumor_functional_marker_counts_per_sample.xlsx"
+
 rawcounts <- read.csv(rawcounts_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
-samples <- read.xlsx(samples_path, colNames = TRUE, rowNames = TRUE)
+normcounts <- read.csv(normcounts_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
+samples <- read.xlsx(samples_path, colNames = TRUE, rowNames = FALSE)
 pDAPI <- read.xlsx(pDAPI_path, colNames = TRUE, rowNames = TRUE)
 pTumor_sample <- read_excel(pTumor_path, sheet = "marker_counts_by_CellDive_ID")
 pTumor_FOV <- read_excel(pTumor_path, sheet = "marker_counts_by_FOV_ID")
@@ -40,12 +45,66 @@ print("library and files loaded")
 
 ```{r}
 
-##reformat nanostring counts file to gene (x) by sample (y) matrix using Patient_ID, drop unwanted samples, create log and zscore version of this file
+#explore tumor functional marker expression
+markersF <- c("B2M.PCT", "B7H3.PCT", "CD27.PCT", "CD40.PCT", "CD40L.PCT", "ICOS.PCT", "IDO1.PCT", "KI67.PCT", "LAG3.PCT", "MHCI.PCT", "MHCII.PCT", "MRC1.PCT", "PD1.PCT", "PDL1.PCT", "TGM2.PCT", "TIM3.PCT", "VISTA.PCT")
 
-# fix sample ID to match samples meta data
+plot_boxplot <- function(dataframe, samples_meta, marker){
+  marker <- enquo(marker)
+  dataframe %>% 
+    select(-c("FOV_ID", "HRS Cells", "N.Markers")) %>% 
+    select(-contains(".N")) %>% 
+    left_join(samples_meta %>% 
+                select(Patient_ID, CellDive_ID), by = "CellDive_ID") %>% 
+    select(-CellDive_ID) %>% 
+    relocate(Patient_ID) %>% 
+    ggplot(aes(x = Patient_ID, y = !!marker)) + 
+    geom_boxplot() + 
+    geom_jitter(shape = 16, size = 1, position = position_jitter(0.2)) + 
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+}
+
+plot_grid(plot_boxplot(pTumor_FOV, samples, B2M.PCT), 
+          plot_boxplot(pTumor_FOV, samples, B7H3.PCT), 
+          plot_boxplot(pTumor_FOV, samples, CD27.PCT), 
+          plot_boxplot(pTumor_FOV, samples, CD40.PCT))
+
+plot_grid(plot_boxplot(pTumor_FOV, samples, CD40L.PCT), 
+          plot_boxplot(pTumor_FOV, samples, ICOS.PCT), 
+          plot_boxplot(pTumor_FOV, samples, IDO1.PCT), 
+          plot_boxplot(pTumor_FOV, samples, KI67.PCT))
+
+plot_grid(plot_boxplot(pTumor_FOV, samples, LAG3.PCT), 
+          plot_boxplot(pTumor_FOV, samples, MHCI.PCT), 
+          plot_boxplot(pTumor_FOV, samples, MHCII.PCT), 
+          plot_boxplot(pTumor_FOV, samples, MRC1.PCT))
+
+plot_grid(plot_boxplot(pTumor_FOV, samples, PD1.PCT), 
+          plot_boxplot(pTumor_FOV, samples, PDL1.PCT), 
+          plot_boxplot(pTumor_FOV, samples, TGM2.PCT), 
+          plot_boxplot(pTumor_FOV, samples, TIM3.PCT), 
+          plot_boxplot(pTumor_FOV, samples, VISTA.PCT))
+          
+```
+
+
+```{r}
+
+#reformat NanoString count file to gene (x) by sample (y) matrix using Patient_ID, drop unwanted samples, create log and zscore version of this file
+rawcounts <- read.csv(rawcounts_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
+
+drop_cols <- c("File.Name", "X.1", "X20190924_09631.G.cart1_PanelStandard_12.RCC", "X20190924_09631.G.cart2_PanelStandard_12.RCC", "X20190925_09631.G.cart3_PanelStandard_12.RCC", "X20190925_09631.G.cart4_PanelStandard_12.RCC")
+
+
+
+test<-rawcounts %>% 
+  filter('Sample ID' == "Endogenous") %>% 
+  select(-all_of(drop_cols))
+
+# fix sample ID to match samples meta data, rename columns
 rawcounts[rawcounts$File.Name == "Sample ID", ] <- sub('-', '_', rawcounts[rawcounts$File.Name == "Sample ID", ])
-# remove housekeeping genes, pos/neg controls
-counts <- rawcounts[rawcounts$File.Name == "Endogenous", ]
+colnames(rawcounts) <- rawcounts[rawcounts$File.Name == "Sample ID", ]
+
 # add nanostring ID row as colnames
 colnames(counts) <- rawcounts[rawcounts$File.Name == "Sample ID", ]
 # drop unwanted columns
@@ -95,7 +154,7 @@ rownames(pTumor_sample)[t2] <- rownames(samples)[t1[t2]]
 pTumor_sample <- pTumor_sample %>% arrange(row.names(pTumor_sample))
 # drop samples without nanostring data in pDAPI and pTumor
 pDAPI_nanostring <- pDAPI[complete.cases(samples$Nanostring_ID), ]
-pTumor_nanostring <- pTumor[complete.cases(samples$Nanostring_ID), ]
+#pTumor_nanostring <- pTumor[complete.cases(samples$Nanostring_ID), ]
 identical(rownames(pDAPI_nanostring), rownames(common_genes))
 bind <- data.frame(cbind(pDAPI_nanostring, common_genes))
 # create list of protein-gene pairs
@@ -161,8 +220,6 @@ for (i in 1:length(celldive_protein_list)){
          path = "/Users/pourmalm/Desktop", device = "pdf")
   plts2[[i]] <- p
 }
-
-
 ```
 
 
@@ -174,17 +231,35 @@ for (i in 1:length(celldive_protein_list)){
 #counts <- as.matrix(counts)
 counts[, 1:ncol(counts)] <- sapply(counts[, 1:ncol(counts)], as.numeric)
 identical(colnames(counts), rownames(meta_nanostring))
-# EBV status
-dds <- DESeqDataSetFromMatrix(countData=counts, colData=meta_nanostring, design=~EBV_final)
-dds$EBV_final <- relevel(dds$EBV_final, "Negative")
-dds <- DESeq(dds)
-res <- results(dds, contrast = c("EBV_final", "Positive", "Negative"))
-res_Ordered <- res[order(res$padj),]
-res_Ordered <- data.frame(GeneID = rownames(res_Ordered), res_Ordered)
-#write.table(res_Ordered, file = "210910_DE_UT_PRvNR.txt", quote = FALSE, sep = "\t", row.names = FALSE)
-# do this for all clinical comparisons of interest
+#list of comparisons
+comp <- c("EBV_final", "Treatment", "Diagnosis_abbrev", "MHCI_IHC_abbrev", "MHCII_IHC_abbrev", "B2M_IHC_abbrev", 
+          "PDL1_IHC_abbrev", "PDL2_IHC", "CT2A_IHC_abbrev", "LMP1_IHC", "B-cell.rich/T-cell.rich/indeterminate")
+comp_relevel <- c("Negative", "Untreated", "MC", "neg", "neg", "neg", "neg", "neg", "neg", "neg", "B-cell")
+comp_relevel2 <- c("Positive", "Treated", "NS", "pos", "pos", "pos", "pos", "pos", "pos", "pos", "T-cell")
+#### automation in progress
+for (i in 1:length(comp)){
+  var <- comp[i]
+  dds <- paste("dds_", var, sep = "")
+  res <- paste("res_", var, sep = "")
+  res_Ordered <- paste("res_Ordered", var, sep = "")
+  dds <- DESeqDataSetFromMatrix(countData=counts, colData=meta_nanostring, design=~comp[i])
+  dds$var <- relevel(dds$var, comp_relevel[i])
+  dds <- DESeq(dds)
+  res <- results(dds, contrast = c(var, comp_relevel2[i], comp_relevel[i]))
+  res_Ordered <- res[order(res$padj),]
+  res_Ordered <- data.frame(GeneID = rownames(res_Ordered), res_Ordered)
+  #write.table(res_Ordered, file = "210910_DE_UT_PRvNR.txt", quote = FALSE, sep = "\t", row.names = FALSE)
+}
 print("differential expression completed")
 
+
+#for now
+dds <- DESeqDataSetFromMatrix(countData=counts, colData=meta_nanostring, design=~pop)
+dds$pop <- relevel(dds$pop, "B-cell")
+dds <- DESeq(dds)
+res <- results(dds, contrast = c("pop", "T-cell", "B-cell"))
+res_Ordered <- res[order(res$padj),]
+res_Ordered <- data.frame(GeneID = rownames(res_Ordered), res_Ordered)
 ```
 
 ```{r}
@@ -205,9 +280,17 @@ pathway_genes_fullList <- read.table(pathway_genes_fullList_path, sep = "\t", he
 ```{r}
 
 ## gene expression heatmaps
+counts$HL_29<-NULL
+colnames(meta_nanostring)[which(names(meta_nanostring) == "B-cell.rich/T-cell.rich/indeterminate")] <- "dom_celltype"
 
+dds <- DESeqDataSetFromMatrix(countData=counts, colData=meta_nanostring, design=~MHCI_IHC_abbrev)
+dds$MHCI_IHC_abbrev <- relevel(dds$MHCI_IHC_abbrev, "neg")
+dds <- DESeq(dds)
+res <- results(dds, contrast = c("MHCI_IHC_abbrev", "pos", "neg"))
+res_Ordered <- res[order(res$padj),]
+res_Ordered <- data.frame(GeneID = rownames(res_Ordered), res_Ordered)
 # filter significant DE genes, reorder by log2FoldChange
-p_val <- 0.05
+p_val <- 0.01
 DE_filter <- filter(res_Ordered, as.numeric(res_Ordered$padj) < p_val)
 DE_filter <- DE_filter[order(DE_filter$log2FoldChange, decreasing=TRUE),]
 # subset DE genes
@@ -220,12 +303,20 @@ all_log2_counts <- log2(all_subset)
 all_z_score <- apply(all_log2_counts, 1, zscore)
 all_z_score <- data.frame(t(all_z_score))
 # prep column annotations
-annot_col <- data.frame(EBV_final = meta$EBV_final, row.names = rownames(meta))
-annot_color <- list(EBV_final = c(Negative="grey", Positive="red", unknown="grey2"))
+#annot_col <- data.frame(EBV_final = meta_nanostring$EBV_final, row.names = rownames(meta_nanostring))
+annot_col <- data.frame(MHCI_IHC_abbrev = meta_nanostring$MHCI_IHC_abbrev, row.names = rownames(meta_nanostring))
+#annot_color <- list(EBV_final = c(Negative="grey", Positive="red", unknown="grey2"))
+# prep row annotations
+
 # color, column labels
 my_breaks=seq(-2,2, by=0.1)
 my_color <- colorpanel(n=length(my_breaks)-1,low="blue",mid="grey88",high="red")
-
+pdf("MHCI_IHC_abbrev_legend", 10, 10)
+pheatmap(all_z_score, legend = T, color = my_color, breaks = my_breaks, show_colnames = T, show_rownames = T, 
+         cluster_rows = F, cluster_cols = T, annotation_col = annot_col, annotation_row = pancancer[,-14],
+         annotation_colors = annot_color, annotation_legend = T, angle_col = 90, border_color = "white", 
+         main = paste("p-adjusted <", p_val, "sorted by L2FC"))
+dev.off()
 
 ##########
 # prep row annotations
@@ -241,7 +332,17 @@ row_annot$TLS <- row.names(row_annot) %in% pathway_genes$TLS
 cols <- sapply(row_annot, is.logical)
 row_annot[,cols] <- lapply(row_annot[,cols], as.numeric)
 
-annot_color <- list(Lesion_response = c(UT="grey", CR="green", non_CR="orange"), 
+annot_color <- list(EBV_final = c(Negative="cyan4", Positive="deeppink4", unknown="grey70"), 
+                    Treatment = c(Untreated="cyan4", Treated="deeppink4", unknown="grey70"), 
+                    Diagnosis_abbrev = c(MC="cyan4", NS="deeppink4", LR="plum4", NLPHL="wheat4", unknown="grey70"), 
+                    MHCI_IHC_abbrev = c(neg="cyan4", pos="deeppink4", cytoplasmic="pink3", "n/a"="grey70", unknown="grey70"), 
+                    MHCII_IHC_abbrev = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
+                    B2M_IHC_abbrev = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
+                    PDL1_IHC_abbrev = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
+                    PDL2_IHC = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
+                    CT2A_IHC_abbrev = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
+                    LMP1_IHC_abbrev = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
+                    dom_celltype = c("B-cell"="cyan4", "T-cell"="deeppink4", indeterminate="grey70"), 
                     Release_of_Cancer_Cell_Antigens = c("+"="grey10", "-"="grey90"), 
                     Cancer_Antigen_Presentation = c("+"="grey10", "-"="grey90"), 
                     T_cell_Priming_and_Activation = c("+"="grey10", "-"="grey90"), 
@@ -266,6 +367,104 @@ pheatmap(all_z_score, legend = T, color = my_color, breaks = my_breaks, show_col
          main = paste("p-adjusted <", p_val, "sorted by L2FC"))
 #dev.off()
 
+```
+
+```{r}
+cibersort<-read.table("/Users/pourmalm/Desktop/CIBERSORTx_Job7_Results.txt", header = TRUE, sep = "\t")
+celldive<-read.table("/Users/pourmalm/Desktop/celldive.txt", header = TRUE, row.names = 1, sep = "\t")
+celldive<-t(celldive)
+celldive<-data.frame(celldive)
+celldive$H16_5562<-NULL
+celldive$HL_20<-NULL
+celldive$HL_26<-NULL
+celldive$HL_28<-NULL
+celldive$HL_32<-NULL
+# replace cell dive ID with sample ID in celldive
+i1 <- match(colnames(celldive), meta_nanostring$CellDive_ID)
+i2 <- !is.na(i1)
+colnames(celldive)[i2] <- rownames(meta_nanostring)[i1[i2]]
+celldive <- celldive %>% select(order(colnames(celldive)))
+# compute percentages for celldive
+for (i in 1:ncol(celldive)){
+  celldive[11, i] <- sum(celldive[,i], na.rm=T)
+}
+for (i in 1:ncol(celldive)){
+  for (j in 1:nrow(celldive)-1){
+    celldive[j,i]<-celldive[j,i]/celldive[11,i]
+  }
+}
+celldive <- celldive[-11,]
+celldive<-data.frame(t(celldive))
+rownames(cibersort) <- cibersort$Sample_ID
+cibersort$Sample_ID <- NULL
+celldive$Other <- NULL
+identical(rownames(cibersort), rownames(celldive))
+identical(colnames(cibersort), colnames(celldive))
+colnames(cibersort) <- c("T_CD4_A", "T_CD8_A", "T_Reg_A", "T_Other_A", "B_All_A", "NK_All_A", "Macrophage_A", "Plasma_A", 
+                         "Leukocyte_Other_A")
+bind2 <- cbind(celldive, cibersort)
+identical(rownames(bind2), rownames(meta_nanostring))
+bind2$main_pop_IHC <- meta_nanostring$`B-cell.rich/T-cell.rich/indeterminate`
+
+##
+
+# create list of celldive, cibersort pairs
+plot_list2 <- data.frame(matrix(ncol = 2, nrow = ncol(celldive)))
+colnames(plot_list2) <- c('celldive', 'cibersort')
+plot_list2$celldive <- colnames(celldive)
+plot_list2$cibersort <- colnames(cibersort)
+# create list of all the scatter plots with gene/protein correlation at the sample level and print
+plts <- list()
+for (i in 1:nrow(plot_list2)){
+  print(i)
+  p <- ggscatter(bind2, x = plot_list2$celldive[i], y = plot_list2$cibersort[i], 
+            add ="reg.line", # Add regressin line, 
+            add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
+            conf.int = TRUE, 
+            xlab = paste(plot_list2$celldive[i], "(mpIF)"), 
+            ylab =  paste(str_remove(plot_list2$cibersort[i], "_A"), "(cibersort)")) # Add confidence interval 
+  p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
+  print(p)
+  plts[[i]] <- p  # add each plot into plot list
+}
+#multiplot(plotlist = plts, cols = 6)
+ggsave("celldive-cibersort_correl.pdf", 
+       gridExtra::marrangeGrob(grobs = plts, nrow = 3, ncol = 3),
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 300, 
+       height = 300, 
+       units = "mm")
+
+#add main cell population color by IHC to scatter plot (B Cell)
+p <- ggscatter(bind2, x = "B_All", y = "B_All_A",
+            color = "main_pop_IHC", 
+            add ="reg.line", # Add regressin line, 
+            add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
+            conf.int = TRUE, 
+            xlab = "B_All (mpIF)", 
+            ylab =  "B_All (cibersort)", 
+            palette = c("B-cell" = "green", "T-cell" = "blue", "indeterminate" = "grey20")) # Add confidence interval 
+p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
+ggsave("b_cell_celldive-cibersort-ihc.pdf", p)
+
+# pool all T cell pops
+bind2$T_All <- bind2$T_CD4 + bind2$T_CD8 + bind2$T_Reg + bind2$T_Other
+bind2$T_All_A <- bind2$T_CD4_A + bind2$T_CD8_A + bind2$T_Reg_A + bind2$T_Other_A
+
+#add main cell population color by IHC to scatter plot (B Cell)
+p <- ggscatter(bind2, x = "T_All", y = "T_All_A",
+            color = "main_pop_IHC", 
+            add ="reg.line", # Add regressin line, 
+            add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
+            conf.int = TRUE, 
+            xlab = "T_All (mpIF)", 
+            ylab =  "T_All (cibersort)", 
+            palette = c("B-cell" = "green", "T-cell" = "blue", "indeterminate" = "grey20")) # Add confidence interval 
+p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
+ggsave("t_cell_celldive-cibersort-ihc.pdf", p)
+
+```
 ```
 
 
