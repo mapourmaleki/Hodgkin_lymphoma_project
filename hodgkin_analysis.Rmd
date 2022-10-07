@@ -8,7 +8,7 @@ Comparison of gene and protein values
 
 ```{r}
 
-#load libraries, nCounter output raw data file, samples meta data file, counts/percentages for markers in total cells (DAPI) and tumor cells
+### load libraries, nCounter output raw data file, samples meta data file, counts/percentages for markers in total cells (DAPI) and tumor cells
 
 library(openxlsx)
 library(readxl)
@@ -26,214 +26,118 @@ library(ggrepel)
 library(mosaic)
 library(gplots)
 library(cowplot)
+library(stringr)
 
-rawcounts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/NanostringResults/09631_G_RawData.csv"
-normcounts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/NanostringResults/06931_G_NormalizedData.csv"
-samples_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/HodgkinLymphoma_Samples__V3.xlsx"
-pDAPI_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/results/data/220720_all_marker_counts_per_sample.xlsx"
-pTumor_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/results/data/220720_tumor_functional_marker_counts_per_sample.xlsx"
+rawcounts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/sequencing_results/RawData.csv"
+normcounts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/sequencing_results/NormalizedData.csv"
+samples_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/meta_data/HodgkinLymphoma_Samples__V1.xlsx"
+clinical_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/meta_data/HodgkinLymphoma_Clinical__V1.xlsx"
+#pDAPI_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/220720_all_marker_counts_per_sample.xlsx"
+#pTumor_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/220720_tumor_functional_marker_counts_per_sample.xlsx"
 
 rawcounts <- read.csv(rawcounts_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
 normcounts <- read.csv(normcounts_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
 samples <- read.xlsx(samples_path, colNames = TRUE, rowNames = FALSE)
-pDAPI <- read.xlsx(pDAPI_path, colNames = TRUE, rowNames = TRUE)
-pTumor_sample <- read_excel(pTumor_path, sheet = "marker_counts_by_CellDive_ID")
-pTumor_FOV <- read_excel(pTumor_path, sheet = "marker_counts_by_FOV_ID")
+clinical <- read.xlsx(clinical_path, colNames = TRUE, rowNames = FALSE)
+#pDAPI <- read.xlsx(pDAPI_path, colNames = TRUE, rowNames = TRUE)
+#pTumor_sample <- read_excel(pTumor_path, sheet = "marker_counts_by_CellDive_ID")
+#pTumor_FOV <- read_excel(pTumor_path, sheet = "marker_counts_by_FOV_ID")
 print("library and files loaded")
-
 ```
 
 ```{r}
 
-#explore tumor functional marker expression
-markersF <- c("B2M.PCT", "B7H3.PCT", "CD27.PCT", "CD40.PCT", "CD40L.PCT", "ICOS.PCT", "IDO1.PCT", "KI67.PCT", "LAG3.PCT", "MHCI.PCT", "MHCII.PCT", "MRC1.PCT", "PD1.PCT", "PDL1.PCT", "TGM2.PCT", "TIM3.PCT", "VISTA.PCT")
+### reformat NanoString count file to gene (x) by sample (y) matrix using Patient_ID, drop unwanted samples, create log and zscore version of this file
 
-plot_boxplot <- function(dataframe, samples_meta, marker){
-  marker <- enquo(marker)
-  dataframe %>% 
-    select(-c("FOV_ID", "HRS Cells", "N.Markers")) %>% 
-    select(-contains(".N")) %>% 
-    left_join(samples_meta %>% 
-                select(Patient_ID, CellDive_ID), by = "CellDive_ID") %>% 
-    select(-CellDive_ID) %>% 
-    relocate(Patient_ID) %>% 
-    ggplot(aes(x = Patient_ID, y = !!marker)) + 
-    geom_boxplot() + 
-    geom_jitter(shape = 16, size = 1, position = position_jitter(0.2)) + 
-    theme_bw() + 
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+drop_cols <- c("X20190924_09631.G.cart1_PanelStandard_12.RCC", 
+               "X20190924_09631.G.cart2_PanelStandard_12.RCC", 
+               "X20190925_09631.G.cart3_PanelStandard_12.RCC", 
+               "X20190925_09631.G.cart4_PanelStandard_12.RCC")
+
+reformat <- function(ncounter_output_file, drop_cols, samples_meta, clinical_meta){
+  ncounter_output_file <- ncounter_output_file %>% 
+    filter(!row_number() %in% c(1, 2)) %>% 
+    filter(Class.Name == "Endogenous") %>% 
+    column_to_rownames(var = "Probe.Name") %>% 
+    select(-c(1:18)) %>% 
+    select(-all_of(drop_cols))
+  new_col_names <- list()
+  for (i in colnames(ncounter_output_file)){
+    new_name <- str_split(i, "_")[[1]][3]
+    new_name <- gsub('[.]', "_", new_name)
+    new_col_names <- append(new_col_names, new_name)
+  }
+  colnames(ncounter_output_file) <- new_col_names
+  # subset samples and clinical meta to include only samples with nanostring, remove NLPHL sample (HL_13) (n=40)
+  samples_nanostring <- samples %>% 
+    filter(!is.na(Nanostring_ID)) %>% 
+    filter(!Patient_ID == "HL_13")
+  clinical_nanostring <- clinical %>% 
+    filter(Patient_ID %in% samples_nanostring$Patient_ID)
+  rownames(clinical_nanostring) <- clinical_nanostring$Patient_ID
+  # list of samples with nanostring data that will not be included in analysis
+  drop <- outersect(samples_nanostring$Nanostring_ID, colnames(ncounter_output_file))
+  # drop those samples from counts, reorder columns to match row order in meta_nanostring
+  new_order <- samples_nanostring$Nanostring_ID
+  ncounter_output_file <- ncounter_output_file %>% 
+    select(-drop) %>% 
+    select(new_order)
+  # replace column names from nanostring ID to patient ID
+  colnames(ncounter_output_file) <- samples_nanostring$Patient_ID
+  # convert values in counts to numeric
+  ncounter_output_file <- mutate_all(ncounter_output_file, function(x) as.numeric(as.character(x)))
+  return(list(ncounter_output_file, clinical_nanostring))
 }
 
-plot_grid(plot_boxplot(pTumor_FOV, samples, B2M.PCT), 
-          plot_boxplot(pTumor_FOV, samples, B7H3.PCT), 
-          plot_boxplot(pTumor_FOV, samples, CD27.PCT), 
-          plot_boxplot(pTumor_FOV, samples, CD40.PCT))
+reformat_rawcounts_temp <- reformat(ncounter_output_file = rawcounts, drop_cols = drop_cols, samples_meta = samples, clinical_meta = clinical)
+reformat_rawcounts <- reformat_rawcounts_temp[[1]]
+clinical_nanostring <- reformat_rawcounts_temp[[2]]
+reformat_rawcounts_temp <- reformat(ncounter_output_file = normcounts, drop_cols = drop_cols, samples_meta = samples, clinical_meta = clinical)
+reformat_normcounts <- reformat_rawcounts_temp[[1]]
 
-plot_grid(plot_boxplot(pTumor_FOV, samples, CD40L.PCT), 
-          plot_boxplot(pTumor_FOV, samples, ICOS.PCT), 
-          plot_boxplot(pTumor_FOV, samples, IDO1.PCT), 
-          plot_boxplot(pTumor_FOV, samples, KI67.PCT))
-
-plot_grid(plot_boxplot(pTumor_FOV, samples, LAG3.PCT), 
-          plot_boxplot(pTumor_FOV, samples, MHCI.PCT), 
-          plot_boxplot(pTumor_FOV, samples, MHCII.PCT), 
-          plot_boxplot(pTumor_FOV, samples, MRC1.PCT))
-
-plot_grid(plot_boxplot(pTumor_FOV, samples, PD1.PCT), 
-          plot_boxplot(pTumor_FOV, samples, PDL1.PCT), 
-          plot_boxplot(pTumor_FOV, samples, TGM2.PCT), 
-          plot_boxplot(pTumor_FOV, samples, TIM3.PCT), 
-          plot_boxplot(pTumor_FOV, samples, VISTA.PCT))
-          
-```
-
-
-```{r}
-
-#reformat NanoString count file to gene (x) by sample (y) matrix using Patient_ID, drop unwanted samples, create log and zscore version of this file
-rawcounts <- read.csv(rawcounts_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
-
-drop_cols <- c("File.Name", "X.1", "X20190924_09631.G.cart1_PanelStandard_12.RCC", "X20190924_09631.G.cart2_PanelStandard_12.RCC", "X20190925_09631.G.cart3_PanelStandard_12.RCC", "X20190925_09631.G.cart4_PanelStandard_12.RCC")
-
-
-
-test<-rawcounts %>% 
-  filter('Sample ID' == "Endogenous") %>% 
-  select(-all_of(drop_cols))
-
-# fix sample ID to match samples meta data, rename columns
-rawcounts[rawcounts$File.Name == "Sample ID", ] <- sub('-', '_', rawcounts[rawcounts$File.Name == "Sample ID", ])
-colnames(rawcounts) <- rawcounts[rawcounts$File.Name == "Sample ID", ]
-
-# add nanostring ID row as colnames
-colnames(counts) <- rawcounts[rawcounts$File.Name == "Sample ID", ]
-# drop unwanted columns
-counts <- counts[,-3]
-drop <- c("Sample ID", "PanelStandard", "PanelStandard.1", "PanelStandard.2", "PanelStandard.3")
-counts <- counts[ ,!(names(counts) %in% drop)]
-rownames(counts) <- counts[,1]
-counts <- counts[,-1]
-# subset samples to include only samples with nanostring data (meta)
-meta_nanostring <- samples[complete.cases(samples$Nanostring_ID), ]
-# list of samples with nanostring data that will not be included in analysis
-drop <- outersect(meta_nanostring$Nanostring_ID, colnames(counts))
-# drop those samples from counts
-counts <- counts[,-which(colnames(counts) %in% drop)]
-# replace nanostring ID with sample ID in counts
-i1 <- match(colnames(counts), meta_nanostring$Nanostring_ID)
-i2 <- !is.na(i1)
-colnames(counts)[i2] <- rownames(meta_nanostring)[i1[i2]]
-counts <- counts %>% select(order(colnames(counts)))
-# convert values in counts to numeric
-counts <- mutate_all(counts, function(x) as.numeric(as.character(x)))
-# take log2, zscore of counts
-log2_counts <- log2(counts)
-zscore_counts <- apply(log2_counts, 1, zscore)
-zscore_counts <- data.frame(t(zscore_counts))
 print("gene by sample matrix created")
 ```
 
 ```{r}
 
-##gene:protein (cell dive - total DAPI cells) correlation
+### differential expression
 
-# list of genes in cell dive panel
-gene_list <- c("B2M", "CD276", "CD14", "CD163", "MS4A1", "CD27", "CD3D", "CD3E","CD3G", "CD30", "CD40", "CD40LG", "CD4", 
-               "CD45RA", "CD45RB", "CD45RO", "NCAM1", "CD8A", "CD8B", "FOXP3", "ICOS", "IDO1", "MKI67", "LAG3", 
-               "HLA-A", "HLA-B", "HLA-C", "HLA-DRB5", "HLA-DRB5", "HLA-DRA", "MRC1", "IRF4", "PDCD1", "CD274", "HAVCR2", 
-               "VSIR")
-common_genes <- data.frame(t(subset(zscore_counts, rownames(zscore_counts) %in% gene_list)))
-# replace cell dive ID with sample ID in counts in pDAPI and pTumor_sample and pTumor_FOV
-p1 <- match(rownames(pDAPI), samples$CellDive_ID)
-p2 <- !is.na(p1)
-rownames(pDAPI)[p2] <- rownames(samples)[p1[p2]]
-pDAPI <- pDAPI %>% arrange(row.names(pDAPI))
-t1 <- match(rownames(pTumor_sample), samples$CellDive_ID)
-t2 <- !is.na(t1)
-rownames(pTumor_sample)[t2] <- rownames(samples)[t1[t2]]
-pTumor_sample <- pTumor_sample %>% arrange(row.names(pTumor_sample))
-# drop samples without nanostring data in pDAPI and pTumor
-pDAPI_nanostring <- pDAPI[complete.cases(samples$Nanostring_ID), ]
-#pTumor_nanostring <- pTumor[complete.cases(samples$Nanostring_ID), ]
-identical(rownames(pDAPI_nanostring), rownames(common_genes))
-bind <- data.frame(cbind(pDAPI_nanostring, common_genes))
-# create list of protein-gene pairs
-plot_list <- data.frame(matrix(ncol = 2, nrow = ncol(common_genes)))
-colnames(plot_list) <- c('protein_x', 'gene_y')
-plot_list$gene_y <- colnames(common_genes)
-plot_list$protein_x <- c("B2M.PCT", "CD14.PCT", "CD163.PCT", "CD27.PCT", "PDL1.PCT", "B7H3.PCT", "CD3.PCT", "CD3.PCT", 
-                         "CD3.PCT", "CD4.PCT", "CD40.PCT", "CD40L.PCT", "CD45.PCT", "CD45.PCT", "CD45.PCT", "CD8.PCT", 
-                         "CD8.PCT", "FOXP3.PCT", "TIM3.PCT", "MHCI.PCT", "MHCI.PCT", "MHCI.PCT", "MHCII.PCT", "MHCII.PCT",  
-                         "ICOS.PCT", "IDO1.PCT", "MUM1.PCT", "LAG3.PCT", "KI67.PCT", "MRC1.PCT", "CD20.PCT", "CD56.PCT", 
-                         "PD1.PCT", "VISTA.PCT")
-# create list of all the scatter plots with gene/protein correlation at the sample level and print
-plts <- list()
-for (i in 1:nrow(plot_list)){
-  p <- ggscatter(bind, x = plot_list$protein_x[i], y = plot_list$gene_y[i], 
-            add ="reg.line", # Add regressin line, 
-            add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
-            conf.int = TRUE, 
-            xlab = paste(str_remove(plot_list$protein_x[i], ".PCT")), 
-            ylab =  paste(plot_list$gene_y[i])) # Add confidence interval 
-  p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
-  print(p)
-  plts[[i]] <- p  # add each plot into plot list
-}
-#multiplot(plotlist = plts, cols = 6)
-ggsave("gene_protein-celldive_correl.pdf", 
-       gridExtra::marrangeGrob(grobs = plts, nrow = 6, ncol = 6),
-       path = "/Users/pourmalm/Desktop", 
-       device = "pdf", 
-       width = 300, 
-       height = 300, 
-       units = "mm")
-```
-
-```{r}
-
-##protein (IHC - tumor cells): protein (cell dive - tumor cells) correlation
-
-# list of overlapping IHC/cell dive proteins
-celldive_protein_list <- c("B2M.PCT", "MHCI.PCT", "MHCII.PCT", "PDL1.PCT")
-celldive <- pTumor[, celldive_protein_list]
-ihc_protein_list <- c("B2M_IHC_abbrev", "MHCI_IHC_abbrev", "MHCII_IHC_abbrev", "PDL1_IHC_abbrev")
-ihc <- samples[, ihc_protein_list]
-ihc <- ihc[1:44, ]
-# drop 3 samples in IHC that have 0 tumor cells in celldive (this will eventually be corrected)
-ihc <- subset(ihc, rownames(ihc) %in% rownames(celldive))
-identical(rownames(celldive), rownames(ihc))
-bind <- data.frame(cbind(celldive, ihc))
-bind$Sample_ID <- rownames(bind)
-# create barplots
-plts2 <- list()
-for (i in 1:length(celldive_protein_list)){
-  bind <- bind %>% arrange(factor(bind[, i+length(celldive_protein_list)], 
-                                  levels = c("pos", "cytoplasmic", "neg", "unknown")), desc(bind[, i]))
-  bind$Sample_ID <- factor(bind$Sample_ID, levels = bind$Sample_ID)
-  p <- ggplot(data=bind, aes(x = Sample_ID, y = bind[, i], fill = bind[, i+length(celldive_protein_list)])) + 
-    geom_bar(stat="identity") + 
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
-    labs(fill = paste(str_remove(ihc_protein_list[i], "_abbrev"))) + 
-    ylab("% tumor cells positive (cell dive)")
-  print(p)
-  ggsave(paste(str_remove(ihc_protein_list[i], "_abbrev"), "_celldive_correl", ".pdf", sep=""), p, 
-         path = "/Users/pourmalm/Desktop", device = "pdf")
-  plts2[[i]] <- p
-}
-```
+#list of comparisons
+clinical_nanostring$Diagnosis_abbrev2 <- clinical_nanostring$Diagnosis_abbrev
+clinical_nanostring <- clinical_nanostring %>% 
+  mutate(Diagnosis_abbrev2 = str_replace(Diagnosis_abbrev2, "MC", "Other")) %>% 
+  mutate(Diagnosis_abbrev2 = str_replace(Diagnosis_abbrev2, "LR", "Other")) %>% 
+  mutate(Diagnosis_abbrev2 = str_replace(Diagnosis_abbrev2, "Unclassified cHL", "Other")) %>% 
+  relocate(Diagnosis_abbrev2, .after = Diagnosis_abbrev)
+comp <- c("Sex", "Age_Diagnosis_Group", "Diagnosis_abbrev_2", "Clinical_Stage_Group", "Sample_type_abbrev", "EBV_final", "Treatment", "Bcell_Tcell", "PDL1_IHC", "PDL2_IHC", 
+          "B2M_IHC", "MHCI_IHC", "MHCII_IHC", "CT2A_IHC")
+#deseq2
+identical(colnames(normcounts), rownames(clinical_nanostring))
 
 
+dds <- DESeqDataSetFromMatrix(countData=normcounts, colData=clinical_nanostring, design=~EBV_final)
+dds$Lesion_response <- relevel(dds$Lesion_response, "UT")
+dds <- DESeq(dds)
+res_nonCR <- results(dds, contrast = c("Lesion_response", "non_CR", "UT"))
+res_CR <- results(dds, contrast = c("Lesion_response", "CR", "UT"))
+res_nonCR_Ordered <- res_nonCR[order(res_nonCR$pvalue),]
+res_CR_Ordered <- res_CR[order(res_CR$pvalue),]
+res_nonCR_Ordered <- data.frame(GeneID = rownames(res_nonCR_Ordered), res_nonCR_Ordered)
+res_CR_Ordered <- data.frame(GeneID = rownames(res_CR_Ordered), res_CR_Ordered)
 
-```{r}
+#for now
+dds <- DESeqDataSetFromMatrix(countData=counts, colData=meta_nanostring, design=~pop)
+dds$pop <- relevel(dds$pop, "B-cell")
+dds <- DESeq(dds)
+res <- results(dds, contrast = c("pop", "T-cell", "B-cell"))
+res_Ordered <- res[order(res$padj),]
+res_Ordered <- data.frame(GeneID = rownames(res_Ordered), res_Ordered)
 
-##differential expression analysis
+
 
 #counts <- as.matrix(counts)
-counts[, 1:ncol(counts)] <- sapply(counts[, 1:ncol(counts)], as.numeric)
-identical(colnames(counts), rownames(meta_nanostring))
-#list of comparisons
-comp <- c("EBV_final", "Treatment", "Diagnosis_abbrev", "MHCI_IHC_abbrev", "MHCII_IHC_abbrev", "B2M_IHC_abbrev", 
-          "PDL1_IHC_abbrev", "PDL2_IHC", "CT2A_IHC_abbrev", "LMP1_IHC", "B-cell.rich/T-cell.rich/indeterminate")
+normcounts[, 1:ncol(normcounts)] <- sapply(normcounts[, 1:ncol(normcounts)], as.numeric)
+
 comp_relevel <- c("Negative", "Untreated", "MC", "neg", "neg", "neg", "neg", "neg", "neg", "neg", "B-cell")
 comp_relevel2 <- c("Positive", "Treated", "NS", "pos", "pos", "pos", "pos", "pos", "pos", "pos", "T-cell")
 #### automation in progress
@@ -251,15 +155,6 @@ for (i in 1:length(comp)){
   #write.table(res_Ordered, file = "210910_DE_UT_PRvNR.txt", quote = FALSE, sep = "\t", row.names = FALSE)
 }
 print("differential expression completed")
-
-
-#for now
-dds <- DESeqDataSetFromMatrix(countData=counts, colData=meta_nanostring, design=~pop)
-dds$pop <- relevel(dds$pop, "B-cell")
-dds <- DESeq(dds)
-res <- results(dds, contrast = c("pop", "T-cell", "B-cell"))
-res_Ordered <- res[order(res$padj),]
-res_Ordered <- data.frame(GeneID = rownames(res_Ordered), res_Ordered)
 ```
 
 ```{r}
@@ -278,6 +173,13 @@ pathway_genes_fullList <- read.table(pathway_genes_fullList_path, sep = "\t", he
 ```
 
 ```{r}
+
+  # take log2, zscore of counts
+  log2_ncounter_output_file <- log2(ncounter_output_file)
+  zscore_ncounter_output_file <- apply(log2_ncounter_output_file, 1, zscore)
+  zscore_ncounter_output_file <- data.frame(t(zscore_ncounter_output_file))
+
+
 
 ## gene expression heatmaps
 counts$HL_29<-NULL
@@ -467,6 +369,139 @@ ggsave("t_cell_celldive-cibersort-ihc.pdf", p)
 ```
 ```
 
+
+```{r}
+
+#explore tumor functional marker expression
+markersF <- c("B2M.PCT", "B7H3.PCT", "CD27.PCT", "CD40.PCT", "CD40L.PCT", "ICOS.PCT", "IDO1.PCT", "KI67.PCT", "LAG3.PCT", "MHCI.PCT", "MHCII.PCT", "MRC1.PCT", "PD1.PCT", "PDL1.PCT", "TGM2.PCT", "TIM3.PCT", "VISTA.PCT")
+
+plot_boxplot <- function(dataframe, samples_meta, marker){
+  marker <- enquo(marker)
+  dataframe %>% 
+    select(-c("FOV_ID", "HRS Cells", "N.Markers")) %>% 
+    select(-contains(".N")) %>% 
+    left_join(samples_meta %>% 
+                select(Patient_ID, CellDive_ID), by = "CellDive_ID") %>% 
+    select(-CellDive_ID) %>% 
+    relocate(Patient_ID) %>% 
+    ggplot(aes(x = Patient_ID, y = !!marker)) + 
+    geom_boxplot() + 
+    geom_jitter(shape = 16, size = 1, position = position_jitter(0.2)) + 
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+}
+
+plot_grid(plot_boxplot(pTumor_FOV, samples, B2M.PCT), 
+          plot_boxplot(pTumor_FOV, samples, B7H3.PCT), 
+          plot_boxplot(pTumor_FOV, samples, CD27.PCT), 
+          plot_boxplot(pTumor_FOV, samples, CD40.PCT))
+
+plot_grid(plot_boxplot(pTumor_FOV, samples, CD40L.PCT), 
+          plot_boxplot(pTumor_FOV, samples, ICOS.PCT), 
+          plot_boxplot(pTumor_FOV, samples, IDO1.PCT), 
+          plot_boxplot(pTumor_FOV, samples, KI67.PCT))
+
+plot_grid(plot_boxplot(pTumor_FOV, samples, LAG3.PCT), 
+          plot_boxplot(pTumor_FOV, samples, MHCI.PCT), 
+          plot_boxplot(pTumor_FOV, samples, MHCII.PCT), 
+          plot_boxplot(pTumor_FOV, samples, MRC1.PCT))
+
+plot_grid(plot_boxplot(pTumor_FOV, samples, PD1.PCT), 
+          plot_boxplot(pTumor_FOV, samples, PDL1.PCT), 
+          plot_boxplot(pTumor_FOV, samples, TGM2.PCT), 
+          plot_boxplot(pTumor_FOV, samples, TIM3.PCT), 
+          plot_boxplot(pTumor_FOV, samples, VISTA.PCT))
+          
+```
+
+```{r}
+
+##gene:protein (cell dive - total DAPI cells) correlation
+
+# list of genes in cell dive panel
+gene_list <- c("B2M", "CD276", "CD14", "CD163", "MS4A1", "CD27", "CD3D", "CD3E","CD3G", "CD30", "CD40", "CD40LG", "CD4", 
+               "CD45RA", "CD45RB", "CD45RO", "NCAM1", "CD8A", "CD8B", "FOXP3", "ICOS", "IDO1", "MKI67", "LAG3", 
+               "HLA-A", "HLA-B", "HLA-C", "HLA-DRB5", "HLA-DRB5", "HLA-DRA", "MRC1", "IRF4", "PDCD1", "CD274", "HAVCR2", 
+               "VSIR")
+common_genes <- data.frame(t(subset(zscore_counts, rownames(zscore_counts) %in% gene_list)))
+# replace cell dive ID with sample ID in counts in pDAPI and pTumor_sample and pTumor_FOV
+p1 <- match(rownames(pDAPI), samples$CellDive_ID)
+p2 <- !is.na(p1)
+rownames(pDAPI)[p2] <- rownames(samples)[p1[p2]]
+pDAPI <- pDAPI %>% arrange(row.names(pDAPI))
+t1 <- match(rownames(pTumor_sample), samples$CellDive_ID)
+t2 <- !is.na(t1)
+rownames(pTumor_sample)[t2] <- rownames(samples)[t1[t2]]
+pTumor_sample <- pTumor_sample %>% arrange(row.names(pTumor_sample))
+# drop samples without nanostring data in pDAPI and pTumor
+pDAPI_nanostring <- pDAPI[complete.cases(samples$Nanostring_ID), ]
+#pTumor_nanostring <- pTumor[complete.cases(samples$Nanostring_ID), ]
+identical(rownames(pDAPI_nanostring), rownames(common_genes))
+bind <- data.frame(cbind(pDAPI_nanostring, common_genes))
+# create list of protein-gene pairs
+plot_list <- data.frame(matrix(ncol = 2, nrow = ncol(common_genes)))
+colnames(plot_list) <- c('protein_x', 'gene_y')
+plot_list$gene_y <- colnames(common_genes)
+plot_list$protein_x <- c("B2M.PCT", "CD14.PCT", "CD163.PCT", "CD27.PCT", "PDL1.PCT", "B7H3.PCT", "CD3.PCT", "CD3.PCT", 
+                         "CD3.PCT", "CD4.PCT", "CD40.PCT", "CD40L.PCT", "CD45.PCT", "CD45.PCT", "CD45.PCT", "CD8.PCT", 
+                         "CD8.PCT", "FOXP3.PCT", "TIM3.PCT", "MHCI.PCT", "MHCI.PCT", "MHCI.PCT", "MHCII.PCT", "MHCII.PCT",  
+                         "ICOS.PCT", "IDO1.PCT", "MUM1.PCT", "LAG3.PCT", "KI67.PCT", "MRC1.PCT", "CD20.PCT", "CD56.PCT", 
+                         "PD1.PCT", "VISTA.PCT")
+# create list of all the scatter plots with gene/protein correlation at the sample level and print
+plts <- list()
+for (i in 1:nrow(plot_list)){
+  p <- ggscatter(bind, x = plot_list$protein_x[i], y = plot_list$gene_y[i], 
+            add ="reg.line", # Add regressin line, 
+            add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
+            conf.int = TRUE, 
+            xlab = paste(str_remove(plot_list$protein_x[i], ".PCT")), 
+            ylab =  paste(plot_list$gene_y[i])) # Add confidence interval 
+  p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
+  print(p)
+  plts[[i]] <- p  # add each plot into plot list
+}
+#multiplot(plotlist = plts, cols = 6)
+ggsave("gene_protein-celldive_correl.pdf", 
+       gridExtra::marrangeGrob(grobs = plts, nrow = 6, ncol = 6),
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 300, 
+       height = 300, 
+       units = "mm")
+```
+
+```{r}
+
+##protein (IHC - tumor cells): protein (cell dive - tumor cells) correlation
+
+# list of overlapping IHC/cell dive proteins
+celldive_protein_list <- c("B2M.PCT", "MHCI.PCT", "MHCII.PCT", "PDL1.PCT")
+celldive <- pTumor[, celldive_protein_list]
+ihc_protein_list <- c("B2M_IHC_abbrev", "MHCI_IHC_abbrev", "MHCII_IHC_abbrev", "PDL1_IHC_abbrev")
+ihc <- samples[, ihc_protein_list]
+ihc <- ihc[1:44, ]
+# drop 3 samples in IHC that have 0 tumor cells in celldive (this will eventually be corrected)
+ihc <- subset(ihc, rownames(ihc) %in% rownames(celldive))
+identical(rownames(celldive), rownames(ihc))
+bind <- data.frame(cbind(celldive, ihc))
+bind$Sample_ID <- rownames(bind)
+# create barplots
+plts2 <- list()
+for (i in 1:length(celldive_protein_list)){
+  bind <- bind %>% arrange(factor(bind[, i+length(celldive_protein_list)], 
+                                  levels = c("pos", "cytoplasmic", "neg", "unknown")), desc(bind[, i]))
+  bind$Sample_ID <- factor(bind$Sample_ID, levels = bind$Sample_ID)
+  p <- ggplot(data=bind, aes(x = Sample_ID, y = bind[, i], fill = bind[, i+length(celldive_protein_list)])) + 
+    geom_bar(stat="identity") + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+    labs(fill = paste(str_remove(ihc_protein_list[i], "_abbrev"))) + 
+    ylab("% tumor cells positive (cell dive)")
+  print(p)
+  ggsave(paste(str_remove(ihc_protein_list[i], "_abbrev"), "_celldive_correl", ".pdf", sep=""), p, 
+         path = "/Users/pourmalm/Desktop", device = "pdf")
+  plts2[[i]] <- p
+}
+```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
 
