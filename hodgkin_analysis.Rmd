@@ -3,8 +3,8 @@ title: "hodgkin_lymphoma_analysis"
 output: html_notebook
 ---
 
-Analyzing and plotting NanoString results for Hodgkin lymphoma project
-Comparison of gene and protein values
+Analyzing and plotting NanoString, RNA seq, flow cytometry results for Hodgkin lymphoma project
+Comparison of gene, protein values (mpIF, IHC, NanoString, RNA seq, flow cytometry)
 
 ```{r}
 
@@ -17,7 +17,6 @@ library(ggplot2)
 library(dplyr)
 library(pheatmap)
 library(usefun)
-library(ggplot2)
 library(Kendall)
 library(ggpubr)
 library(tidyverse)
@@ -27,40 +26,74 @@ library(mosaic)
 library(gplots)
 library(cowplot)
 library(stringr)
+library(EnhancedVolcano)
+library(RColorBrewer)
+library(biomaRt)
 
 rawcounts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/sequencing_results/RawData.csv"
 normcounts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/sequencing_results/NormalizedData.csv"
-samples_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/meta_data/HodgkinLymphoma_Samples__V1.xlsx"
-clinical_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/meta_data/HodgkinLymphoma_Clinical__V1.xlsx"
-#pDAPI_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/220720_all_marker_counts_per_sample.xlsx"
-#pTumor_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/220720_tumor_functional_marker_counts_per_sample.xlsx"
-
+samples_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/meta_data/HodgkinLymphoma_Samples__VRNA.xlsx"
+pancancer_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/NanoString_info/PanCancerIO360_R.txt"
+probeannotations_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/NanoString_info/ProbeAnnotations.txt"
+lm22_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/cibersort/2016_Newman_NatMethods_PMID_25822800_reformat.csv"
+lm22_io360_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/cibersort/lm22_nanostring.csv"
+gsea_pathways_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/annotate_gene_sets.xlsx"
+gsea_pathways_abbrev_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/annotate_gene_sets_abbrev.xlsx"
+gsea_pathways_final_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/annotate_gene_sets_final_io360.xlsx"
+cibersort_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/nanostring/cibersort/CIBERSORTx_Job11_Results.csv"
+mpif_celltype_path <-"/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/marker_combination_cell_type_counts.xlsx"
+pDAPI_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/all_marker_counts_per_sample.xlsx"
+total_rna_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/RNAseq/sequencing_results/Proj_10020_htseq_all_samples_FINALSUBSET.txt"
+flow_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/flow/Flow_data_final.xlsx"
+cibersort_totalRNA_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/RNAseq/cibersort/CIBERSORTx_Job14_Results.csv"
+gsea_totalRNA_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/RNAseq/gsea/230105_gsea_all_results_totalRNA.xlsx"
+hrsagg_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/stats_Aggregation_HRS_N2_AggSize__20_CLIN_FINAL.xlsx"
+hrsagg_detail_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/stats_Aggregation_HRS_N2_AggSize__20_aggdata_FINAL.xlsx"
+hrs_func_marker_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/allSamples.csv"
+hrscov_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/intraPatientCoV_PCTHRSStates_v2.1_.xlsx"
+hrscov_order_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/hrsStatesHeatmap06.barplot_v2.1_.csv"
 rawcounts <- read.csv(rawcounts_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
 normcounts <- read.csv(normcounts_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
 samples <- read.xlsx(samples_path, colNames = TRUE, rowNames = FALSE)
-clinical <- read.xlsx(clinical_path, colNames = TRUE, rowNames = FALSE)
-#pDAPI <- read.xlsx(pDAPI_path, colNames = TRUE, rowNames = TRUE)
-#pTumor_sample <- read_excel(pTumor_path, sheet = "marker_counts_by_CellDive_ID")
-#pTumor_FOV <- read_excel(pTumor_path, sheet = "marker_counts_by_FOV_ID")
+pancancer <- read.table(pancancer_path, sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = F)
+probeannotations <- read.table(probeannotations_path, sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = F)
+lm22 <- read.csv(lm22_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
+lm22_io360 <- read.csv(lm22_io360_path, header = TRUE, row.names = 1, stringsAsFactors = FALSE, sep = ",")
+gsea_pathways <- read.xlsx(gsea_pathways_path, colNames = TRUE, rowNames = FALSE)
+gsea_pathways_abbrev <- read.xlsx(gsea_pathways_abbrev_path, colNames = TRUE, rowNames = FALSE)
+gsea_pathways_final <- read.xlsx(gsea_pathways_final_path, colNames = TRUE, rowNames = FALSE)
+cibersort <- read.table(cibersort_path, header = TRUE, sep = ",")
+mpif_celltype <- read_excel(mpif_celltype_path, sheet = "Subtype_by_CellDive_ID")
+pDAPI <- read.xlsx(pDAPI_path, colNames = TRUE, rowNames = TRUE)
+total_rna <- read.table(total_rna_path, header = TRUE, sep = "\t")
+flow <- read.xlsx(flow_path, colNames = TRUE, rowNames = FALSE)
+cibersort_totalRNA <- read.table(cibersort_totalRNA_path, header = TRUE, sep = ",")
+gsea_totalRNA <- read_excel(gsea_totalRNA_path, sheet = "Sheet2")
+hrsagg <- read_excel(hrsagg_path)
+hrsagg_detail <- read_excel(hrsagg_detail_path)
+hrs_func_marker <- read.csv(hrs_func_marker_path, header = TRUE, stringsAsFactors = FALSE, sep = ",")
+hrscov <- read_excel(hrscov_path, sheet = "CovPerPt")
+hrscov_order <- read.csv(hrscov_order_path, header = TRUE, stringsAsFactors = FALSE, sep = ",")
+
 print("library and files loaded")
 ```
 
 ```{r}
 
-### reformat NanoString count file to gene (x) by sample (y) matrix using Patient_ID, drop unwanted samples, create log and zscore version of this file
+### reformat NanoString count file to gene (x) by sample (y) matrix using Patient_ID, drop unwanted samples
 
 drop_cols <- c("X20190924_09631.G.cart1_PanelStandard_12.RCC", 
                "X20190924_09631.G.cart2_PanelStandard_12.RCC", 
                "X20190925_09631.G.cart3_PanelStandard_12.RCC", 
                "X20190925_09631.G.cart4_PanelStandard_12.RCC")
 
-reformat <- function(ncounter_output_file, drop_cols, samples_meta, clinical_meta){
+reformat <- function(ncounter_output_file, drop_cols, samples_meta){
   ncounter_output_file <- ncounter_output_file %>% 
     filter(!row_number() %in% c(1, 2)) %>% 
     filter(Class.Name == "Endogenous") %>% 
     column_to_rownames(var = "Probe.Name") %>% 
-    select(-c(1:18)) %>% 
-    select(-all_of(drop_cols))
+    dplyr::select(-c(1:18)) %>% 
+    dplyr::select(-all_of(drop_cols))
   new_col_names <- list()
   for (i in colnames(ncounter_output_file)){
     new_name <- str_split(i, "_")[[1]][3]
@@ -68,183 +101,282 @@ reformat <- function(ncounter_output_file, drop_cols, samples_meta, clinical_met
     new_col_names <- append(new_col_names, new_name)
   }
   colnames(ncounter_output_file) <- new_col_names
-  # subset samples and clinical meta to include only samples with nanostring, remove NLPHL sample (HL_13) (n=40)
+  # subset samples meta to include only UNTREATED samples with nanostring (32 total)
   samples_nanostring <- samples %>% 
     filter(!is.na(Nanostring_ID)) %>% 
-    filter(!Patient_ID == "HL_13")
-  clinical_nanostring <- clinical %>% 
-    filter(Patient_ID %in% samples_nanostring$Patient_ID)
-  rownames(clinical_nanostring) <- clinical_nanostring$Patient_ID
+    filter(Treatment == "Untreated")
+  rownames(samples_nanostring) <- samples_nanostring$Patient_ID
   # list of samples with nanostring data that will not be included in analysis
   drop <- outersect(samples_nanostring$Nanostring_ID, colnames(ncounter_output_file))
   # drop those samples from counts, reorder columns to match row order in meta_nanostring
   new_order <- samples_nanostring$Nanostring_ID
   ncounter_output_file <- ncounter_output_file %>% 
-    select(-drop) %>% 
-    select(new_order)
+    dplyr::select(-all_of(drop)) %>% 
+    dplyr::select(all_of(new_order))
   # replace column names from nanostring ID to patient ID
   colnames(ncounter_output_file) <- samples_nanostring$Patient_ID
   # convert values in counts to numeric
   ncounter_output_file <- mutate_all(ncounter_output_file, function(x) as.numeric(as.character(x)))
-  return(list(ncounter_output_file, clinical_nanostring))
+  return(list(ncounter_output_file, samples_nanostring))
 }
 
-reformat_rawcounts_temp <- reformat(ncounter_output_file = rawcounts, drop_cols = drop_cols, samples_meta = samples, clinical_meta = clinical)
+reformat_rawcounts_temp <- reformat(ncounter_output_file = rawcounts, drop_cols = drop_cols, samples_meta = samples)
 reformat_rawcounts <- reformat_rawcounts_temp[[1]]
-clinical_nanostring <- reformat_rawcounts_temp[[2]]
-reformat_rawcounts_temp <- reformat(ncounter_output_file = normcounts, drop_cols = drop_cols, samples_meta = samples, clinical_meta = clinical)
+samples_nanostring <- reformat_rawcounts_temp[[2]]
+reformat_rawcounts_temp <- reformat(ncounter_output_file = normcounts, drop_cols = drop_cols, samples_meta = samples)
 reformat_normcounts <- reformat_rawcounts_temp[[1]]
+rm(reformat_rawcounts_temp)
 
 print("gene by sample matrix created")
 ```
 
 ```{r}
 
-### differential expression
+### differential expression with deseq2
 
-#list of comparisons
-clinical_nanostring$Diagnosis_abbrev2 <- clinical_nanostring$Diagnosis_abbrev
-clinical_nanostring <- clinical_nanostring %>% 
+# simplify 'Diagnosis_abbrev' and 'Current_status'
+samples_nanostring$Diagnosis_abbrev2 <- samples_nanostring$Diagnosis_abbrev
+samples_nanostring$Current_status2 <- samples_nanostring$Current_status
+samples_nanostring <- samples_nanostring %>% 
   mutate(Diagnosis_abbrev2 = str_replace(Diagnosis_abbrev2, "MC", "Other")) %>% 
   mutate(Diagnosis_abbrev2 = str_replace(Diagnosis_abbrev2, "LR", "Other")) %>% 
   mutate(Diagnosis_abbrev2 = str_replace(Diagnosis_abbrev2, "Unclassified cHL", "Other")) %>% 
-  relocate(Diagnosis_abbrev2, .after = Diagnosis_abbrev)
-comp <- c("Sex", "Age_Diagnosis_Group", "Diagnosis_abbrev_2", "Clinical_Stage_Group", "Sample_type_abbrev", "EBV_final", "Treatment", "Bcell_Tcell", "PDL1_IHC", "PDL2_IHC", 
-          "B2M_IHC", "MHCI_IHC", "MHCII_IHC", "CT2A_IHC")
-#deseq2
-identical(colnames(normcounts), rownames(clinical_nanostring))
+  relocate(Diagnosis_abbrev2, .after = Diagnosis_abbrev) %>% 
+  mutate(Current_status2 = str_replace(Current_status2, "refractory", "not_remission")) %>% 
+  mutate(Current_status2 = str_replace(Current_status2, "relapse", "not_remission")) %>% 
+  relocate(Current_status2, .after = Current_status)
 
+identical(colnames(reformat_rawcounts), rownames(samples_nanostring))
 
-dds <- DESeqDataSetFromMatrix(countData=normcounts, colData=clinical_nanostring, design=~EBV_final)
-dds$Lesion_response <- relevel(dds$Lesion_response, "UT")
-dds <- DESeq(dds)
-res_nonCR <- results(dds, contrast = c("Lesion_response", "non_CR", "UT"))
-res_CR <- results(dds, contrast = c("Lesion_response", "CR", "UT"))
-res_nonCR_Ordered <- res_nonCR[order(res_nonCR$pvalue),]
-res_CR_Ordered <- res_CR[order(res_CR$pvalue),]
-res_nonCR_Ordered <- data.frame(GeneID = rownames(res_nonCR_Ordered), res_nonCR_Ordered)
-res_CR_Ordered <- data.frame(GeneID = rownames(res_CR_Ordered), res_CR_Ordered)
+# differential expression by 'EBV_final'
+dds_EBV <- DESeqDataSetFromMatrix(countData=reformat_rawcounts, colData=samples_nanostring, design=~EBV_final)
+dds_EBV$EBV_final <- relevel(dds_EBV$EBV_final, "Negative")
+dds_EBV <- DESeq(dds_EBV)
+res_EBV <- results(dds_EBV, contrast = c("EBV_final", "Positive", "Negative"))
+res_Ordered_EBV <- res_EBV[order(res_EBV$padj),]
+res_Ordered_EBV <- data.frame(GeneID = rownames(res_Ordered_EBV), res_Ordered_EBV)
 
-#for now
-dds <- DESeqDataSetFromMatrix(countData=counts, colData=meta_nanostring, design=~pop)
-dds$pop <- relevel(dds$pop, "B-cell")
-dds <- DESeq(dds)
-res <- results(dds, contrast = c("pop", "T-cell", "B-cell"))
-res_Ordered <- res[order(res$padj),]
-res_Ordered <- data.frame(GeneID = rownames(res_Ordered), res_Ordered)
+# differential expression by 'Age_Diagnosis_Group'
+dds_age <- DESeqDataSetFromMatrix(countData=reformat_rawcounts, colData=samples_nanostring, design=~Age_Diagnosis_Group)
+dds_age$Age_Diagnosis_Group <- relevel(dds_age$Age_Diagnosis_Group, "under45")
+dds_age <- DESeq(dds_age)
+res_age <- results(dds_age, contrast = c("Age_Diagnosis_Group", "over45", "under45"))
+res_Ordered_age <- res_age[order(res_age$padj),]
+res_Ordered_age <- data.frame(GeneID = rownames(res_Ordered_age), res_Ordered_age)
 
+# differential expression by 'Clinical_Stage_Group'
+# dds_stage <- DESeqDataSetFromMatrix(countData=reformat_rawcounts, colData=samples_nanostring, design=~Clinical_Stage_Group)
+# dds_stage$Clinical_Stage_Group <- relevel(dds_stage$Clinical_Stage_Group, "Limited")
+# dds_stage <- DESeq(dds_stage)
+# res_stage <- results(dds_stage, contrast = c("Clinical_Stage_Group", "Advanced", "Limited"))
+# res_Ordered_stage <- res_stage[order(res_stage$padj),]
+# res_Ordered_stage <- data.frame(GeneID = rownames(res_Ordered_stage), res_Ordered_stage)
+# 
+# differential expression by 'Current_status'
+# dds_status <- DESeqDataSetFromMatrix(countData=reformat_rawcounts, colData=samples_nanostring, design=~Current_status2)
+# dds_status$Current_status2 <- relevel(dds_status$Current_status2, "remission")
+# dds_status <- DESeq(dds_status)
+# res_status <- results(dds_status, contrast = c("Current_status2", "not_remission", "remission"))
+# res_Ordered_status <- res_status[order(res_status$padj),]
+# res_Ordered_status <- data.frame(GeneID = rownames(res_Ordered_status), res_Ordered_status)
 
+# differential expression by 'Diagnosis_abbrev2'
+# dds_diagnosis <- DESeqDataSetFromMatrix(countData=reformat_rawcounts, colData=samples_nanostring, design=~Diagnosis_abbrev2)
+# dds_diagnosis$Diagnosis_abbrev2 <- relevel(dds_diagnosis$Diagnosis_abbrev2, "NS")
+# dds_diagnosis <- DESeq(dds_diagnosis)
+# res_diagnosis <- results(dds_diagnosis, contrast = c("Diagnosis_abbrev2", "Other", "NS"))
+# res_Ordered_diagnosis <- res_diagnosis[order(res_diagnosis$padj),]
+# res_Ordered_diagnosis <- data.frame(GeneID = rownames(res_Ordered_diagnosis), res_Ordered_diagnosis)
 
-#counts <- as.matrix(counts)
-normcounts[, 1:ncol(normcounts)] <- sapply(normcounts[, 1:ncol(normcounts)], as.numeric)
-
-comp_relevel <- c("Negative", "Untreated", "MC", "neg", "neg", "neg", "neg", "neg", "neg", "neg", "B-cell")
-comp_relevel2 <- c("Positive", "Treated", "NS", "pos", "pos", "pos", "pos", "pos", "pos", "pos", "T-cell")
-#### automation in progress
-for (i in 1:length(comp)){
-  var <- comp[i]
-  dds <- paste("dds_", var, sep = "")
-  res <- paste("res_", var, sep = "")
-  res_Ordered <- paste("res_Ordered", var, sep = "")
-  dds <- DESeqDataSetFromMatrix(countData=counts, colData=meta_nanostring, design=~comp[i])
-  dds$var <- relevel(dds$var, comp_relevel[i])
-  dds <- DESeq(dds)
-  res <- results(dds, contrast = c(var, comp_relevel2[i], comp_relevel[i]))
-  res_Ordered <- res[order(res$padj),]
-  res_Ordered <- data.frame(GeneID = rownames(res_Ordered), res_Ordered)
-  #write.table(res_Ordered, file = "210910_DE_UT_PRvNR.txt", quote = FALSE, sep = "\t", row.names = FALSE)
-}
 print("differential expression completed")
 ```
 
 ```{r}
 
-######CHECK THESE FILES######
+### create volcano plot
 
-pancancer_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/NanoString_info/PanCancerIO360_R.txt"
-probeannotations_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/NanoString_info/ProbeAnnotations.txt"
-pathway_genes_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/Melanoma_nanostring/Results/DESeq/genes.txt"
-pathway_genes_fullList_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/Melanoma_nanostring/Results/DESeq/genes_fullList.txt"
-pancancer <- read.table(pancancer_path, sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = F)
-probeannotations <- read.table(probeannotations_path, sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = F)
-pathway_genes <- read.table(pathway_genes_path, sep = "\t", header = TRUE, row.names = NULL, stringsAsFactors = F)
-pathway_genes_fullList <- read.table(pathway_genes_fullList_path, sep = "\t", header = TRUE, row.names = NULL, stringsAsFactors = F)
+# get list of lm22 genes that are significant
+lm22_genes_total <- lm22 %>% 
+  replace(lm22=="", "NA")
+lm22_genes <- unique(unlist(lm22))
+# sig DE lm22 genes
+lm22_sig <- intersect(rownames(res_Ordered_EBV %>% dplyr::filter(padj < 0.05)), lm22_genes)
+# sig DE lm22 genes in top 20
+lm22_sig_top20 <- intersect(rownames(res_Ordered_EBV %>% dplyr::filter(padj < 0.05))[1:20], lm22_genes)
+# sig DE lm22 genes in sig different cibersort cell types
+a <- intersect(lm22$T_cells_CD4_memory_resting, lm22_sig)
+b <- intersect(lm22$T_cells_CD8, lm22_sig)
+c <- intersect(lm22$Macrophages_M1, lm22_sig)
+d <- intersect(lm22$Dendritic_cells_activated, lm22_sig)
+cibersort_de_genes <- union(a, b)
+cibersort_de_genes <- union(cibersort_de_genes, c)
+cibersort_de_genes <- union(cibersort_de_genes, d)
+label <- union(rownames(res_Ordered_EBV)[1:20], cibersort_de_genes)
 
+p <- EnhancedVolcano(res_EBV, 
+    lab = rownames(res_EBV), 
+    x = 'log2FoldChange', 
+    y = 'padj', 
+    title = 'EBV positive versus EBV negative',
+    pCutoff = 0.05,
+    FCcutoff = 0,
+    pointSize = 3.0,
+    labSize = 4.0, 
+    col=c('grey69', 'grey69', 'grey69', 'red3'),
+    colAlpha = 0.7,
+    cutoffLineType = 'dashed',
+    cutoffLineCol = 'black',
+    cutoffLineWidth = 0.8,
+    hline = c(0.01, 0.001),
+    hlineCol = c('black', 'black'),
+    hlineType = c('dashed', 'dashed'),
+    hlineWidth = c(0.8, 0.8),
+    gridlines.major = FALSE,
+    gridlines.minor = FALSE, 
+    selectLab = label, 
+    drawConnectors = TRUE,
+    widthConnectors = 0.75) +
+    ggplot2::coord_cartesian(ylim=c(0, 13)) +
+    ggplot2::scale_y_continuous(breaks=seq(0, 13, 3)) +
+    ggplot2::coord_cartesian(xlim=c(-6, 6)) +
+    ggplot2::scale_x_continuous(breaks=seq(-6, 6, 2))
+ggsave("EBV_volcano.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 200, 
+       height = 200, 
+       units = "mm")
+
+print("volcano done!")
 ```
 
 ```{r}
 
-  # take log2, zscore of counts
-  log2_ncounter_output_file <- log2(ncounter_output_file)
-  zscore_ncounter_output_file <- apply(log2_ncounter_output_file, 1, zscore)
-  zscore_ncounter_output_file <- data.frame(t(zscore_ncounter_output_file))
+### prep data for gene expression heatmap (EBV, Age, Diagnosis)
 
+# NOTE: change arrange variable (EBV)
+format_results_for_heatmap <- function(normcounts, res_Ordered, p_val, meta){
+  # filter significant DE genes, reorder by log2FoldChange
+  DE_filter <- dplyr::filter(res_Ordered, as.numeric(res_Ordered$padj) < p_val)
+  DE_filter <- DE_filter[order(DE_filter$log2FoldChange, decreasing=TRUE),]
+  # subset DE genes, reorder by log2FoldChange, take log2/zscore
+  all_subset <- subset(normcounts, rownames(normcounts) %in% rownames(DE_filter))
+  all_subset <- all_subset[order(match(rownames(all_subset), rownames(DE_filter))), ]
+  #log2_normcounts <- log2(all_subset)
+  zscore_normcounts <- apply(all_subset, 1, zscore)
+  zscore_normcounts <- data.frame(t(zscore_normcounts))
+  #reorder columns by comparison variable and inter-variable ordering (first set negatives to zero)
+  zscore_normcounts_reorder <- zscore_normcounts %>% 
+    mutate_all(list(~ifelse(. < 0, 0, .))) %>% 
+    summarise_all(sum) %>% 
+    t() %>% 
+    as.data.frame() %>% 
+    base::merge((meta %>% dplyr::select(EBV_final)), by = 'row.names') %>% 
+    arrange(desc(EBV_final), -V1) %>% 
+    column_to_rownames(var = "Row.names")
+  zscore_normcounts <- zscore_normcounts %>% dplyr::select(rownames(zscore_normcounts_reorder))
+  return (zscore_normcounts)
+}
 
+zscore_normcounts_EBV_0.05 <- format_results_for_heatmap(normcounts = reformat_normcounts, res_Ordered = res_Ordered_EBV, 
+                                                p_val = 0.05, meta = samples_nanostring)
+zscore_normcounts_EBV_0.01 <- format_results_for_heatmap(normcounts = reformat_normcounts, res_Ordered = res_Ordered_EBV, 
+                                                p_val = 0.01, meta = samples_nanostring)
 
-## gene expression heatmaps
-counts$HL_29<-NULL
-colnames(meta_nanostring)[which(names(meta_nanostring) == "B-cell.rich/T-cell.rich/indeterminate")] <- "dom_celltype"
+# NOTE: change arrange variable (Age)
+format_results_for_heatmap <- function(normcounts, res_Ordered, p_val, meta){
+  # filter significant DE genes, reorder by log2FoldChange
+  DE_filter <- dplyr::filter(res_Ordered, as.numeric(res_Ordered$padj) < p_val)
+  DE_filter <- DE_filter[order(DE_filter$log2FoldChange, decreasing=TRUE),]
+  # subset DE genes, reorder by log2FoldChange, take log2/zscore
+  all_subset <- subset(normcounts, rownames(normcounts) %in% rownames(DE_filter))
+  all_subset <- all_subset[order(match(rownames(all_subset), rownames(DE_filter))), ]
+  #log2_normcounts <- log2(all_subset)
+  zscore_normcounts <- apply(all_subset, 1, zscore)
+  zscore_normcounts <- data.frame(t(zscore_normcounts))
+  #reorder columns by comparison variable and inter-variable ordering (first set negatives to zero)
+  zscore_normcounts_reorder <- zscore_normcounts %>% 
+    mutate_all(list(~ifelse(. < 0, 0, .))) %>% 
+    summarise_all(sum) %>% 
+    t() %>% 
+    as.data.frame() %>% 
+    merge((meta %>% dplyr::select(Age_Diagnosis_Group)), by = 'row.names') %>% 
+    arrange(desc(Age_Diagnosis_Group), -V1) %>% 
+    column_to_rownames(var = "Row.names")
+  zscore_normcounts <- zscore_normcounts %>% dplyr::select(rownames(zscore_normcounts_reorder))
+  return (zscore_normcounts)
+}
 
-dds <- DESeqDataSetFromMatrix(countData=counts, colData=meta_nanostring, design=~MHCI_IHC_abbrev)
-dds$MHCI_IHC_abbrev <- relevel(dds$MHCI_IHC_abbrev, "neg")
-dds <- DESeq(dds)
-res <- results(dds, contrast = c("MHCI_IHC_abbrev", "pos", "neg"))
-res_Ordered <- res[order(res$padj),]
-res_Ordered <- data.frame(GeneID = rownames(res_Ordered), res_Ordered)
-# filter significant DE genes, reorder by log2FoldChange
-p_val <- 0.01
-DE_filter <- filter(res_Ordered, as.numeric(res_Ordered$padj) < p_val)
-DE_filter <- DE_filter[order(DE_filter$log2FoldChange, decreasing=TRUE),]
-# subset DE genes
-all_subset <- subset(counts, rownames(counts) %in% rownames(DE_filter))
-# reorder subset by log2FoldChange
-all_subset <- all_subset[order(match(rownames(all_subset), rownames(DE_filter))), ]
-# take log2, zscore of counts
-## I MOVED THIS UP ##
-all_log2_counts <- log2(all_subset)
-all_z_score <- apply(all_log2_counts, 1, zscore)
-all_z_score <- data.frame(t(all_z_score))
-# prep column annotations
-#annot_col <- data.frame(EBV_final = meta_nanostring$EBV_final, row.names = rownames(meta_nanostring))
-annot_col <- data.frame(MHCI_IHC_abbrev = meta_nanostring$MHCI_IHC_abbrev, row.names = rownames(meta_nanostring))
-#annot_color <- list(EBV_final = c(Negative="grey", Positive="red", unknown="grey2"))
-# prep row annotations
+zscore_normcounts_age_0.05 <- format_results_for_heatmap(normcounts = reformat_normcounts, res_Ordered = res_Ordered_age, 
+                                                p_val = 0.05, meta = samples_nanostring)
+zscore_normcounts_age_0.01 <- format_results_for_heatmap(normcounts = reformat_normcounts, res_Ordered = res_Ordered_age, 
+                                                p_val = 0.01, meta = samples_nanostring)
 
-# color, column labels
-my_breaks=seq(-2,2, by=0.1)
-my_color <- colorpanel(n=length(my_breaks)-1,low="blue",mid="grey88",high="red")
-pdf("MHCI_IHC_abbrev_legend", 10, 10)
-pheatmap(all_z_score, legend = T, color = my_color, breaks = my_breaks, show_colnames = T, show_rownames = T, 
-         cluster_rows = F, cluster_cols = T, annotation_col = annot_col, annotation_row = pancancer[,-14],
-         annotation_colors = annot_color, annotation_legend = T, angle_col = 90, border_color = "white", 
-         main = paste("p-adjusted <", p_val, "sorted by L2FC"))
-dev.off()
+# OR reorder columns by comparison variable only, inter-variable order random
+#zscore_normcounts_reorder <- zscore_normcounts %>% select(rownames(arrange(clinical_nanostring, desc(EBV_final))))
 
-##########
-# prep row annotations
-row_annot <- data.frame(matrix(0, ncol=6, nrow=770))
-row.names(row_annot) <- row.names(counts)
-row_annot <- row_annot %>% rename(gamma = X1, alpha = X2, il2 = X3, antigen = X4, dysfunction = X5, TLS = X6)
-row_annot$gamma <- row.names(row_annot) %in% pathway_genes$gamma_genes
-row_annot$alpha <- row.names(row_annot) %in% pathway_genes$alpha_genes
-row_annot$il2 <- row.names(row_annot) %in% pathway_genes$il2_genes
-row_annot$antigen <- row.names(row_annot) %in% pathway_genes$antigen_presentation
-row_annot$dysfunction <- row.names(row_annot) %in% pathway_genes$dysfunction
-row_annot$TLS <- row.names(row_annot) %in% pathway_genes$TLS
-cols <- sapply(row_annot, is.logical)
-row_annot[,cols] <- lapply(row_annot[,cols], as.numeric)
+print("data prepered!")
+```
 
-annot_color <- list(EBV_final = c(Negative="cyan4", Positive="deeppink4", unknown="grey70"), 
-                    Treatment = c(Untreated="cyan4", Treated="deeppink4", unknown="grey70"), 
-                    Diagnosis_abbrev = c(MC="cyan4", NS="deeppink4", LR="plum4", NLPHL="wheat4", unknown="grey70"), 
-                    MHCI_IHC_abbrev = c(neg="cyan4", pos="deeppink4", cytoplasmic="pink3", "n/a"="grey70", unknown="grey70"), 
-                    MHCII_IHC_abbrev = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
-                    B2M_IHC_abbrev = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
-                    PDL1_IHC_abbrev = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
-                    PDL2_IHC = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
-                    CT2A_IHC_abbrev = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
-                    LMP1_IHC_abbrev = c(neg="cyan4", pos="deeppink4", unknown="grey70"), 
-                    dom_celltype = c("B-cell"="cyan4", "T-cell"="deeppink4", indeterminate="grey70"), 
+```{r}
+
+### create gene expression heatmap DE genes (EBV, Age)
+
+# reformat gsea gene sets for heatmap row annotations
+gsea_pathways_reformat <- data.frame(matrix(0, ncol=ncol(gsea_pathways), nrow=nrow(reformat_rawcounts)))
+row.names(gsea_pathways_reformat) <- row.names(reformat_rawcounts)
+colnames(gsea_pathways_reformat) <- colnames(gsea_pathways)
+for (i in 1:ncol(gsea_pathways_reformat)){
+  gsea_pathways_reformat[,i] <- row.names(gsea_pathways_reformat) %in% gsea_pathways[,i]
+}
+gsea_pathways_reformat[gsea_pathways_reformat == FALSE] <- "-"
+gsea_pathways_reformat[gsea_pathways_reformat == TRUE] <- "+"
+
+# reformat gsea gene sets for heatmap row annotations (ABBREV)
+gsea_pathways_abbrev_reformat <- data.frame(matrix(0, ncol=ncol(gsea_pathways_abbrev), nrow=nrow(reformat_rawcounts)))
+row.names(gsea_pathways_abbrev_reformat) <- row.names(reformat_rawcounts)
+colnames(gsea_pathways_abbrev_reformat) <- colnames(gsea_pathways_abbrev)
+for (i in 1:ncol(gsea_pathways_abbrev_reformat)){
+  gsea_pathways_abbrev_reformat[,i] <- row.names(gsea_pathways_abbrev_reformat) %in% gsea_pathways_abbrev[,i]
+}
+gsea_pathways_abbrev_reformat[gsea_pathways_abbrev_reformat == FALSE] <- "-"
+gsea_pathways_abbrev_reformat[gsea_pathways_abbrev_reformat == TRUE] <- "+"
+
+# reformat gsea gene sets for heatmap row annotations (FINAL)
+gsea_pathways_final_reformat <- data.frame(matrix(0, ncol=ncol(gsea_pathways_final), nrow=nrow(reformat_rawcounts)))
+row.names(gsea_pathways_final_reformat) <- row.names(reformat_rawcounts)
+colnames(gsea_pathways_final_reformat) <- colnames(gsea_pathways_final)
+for (i in 1:ncol(gsea_pathways_final_reformat)){
+  gsea_pathways_final_reformat[,i] <- row.names(gsea_pathways_final_reformat) %in% gsea_pathways_final[,i]
+}
+gsea_pathways_final_reformat[gsea_pathways_final_reformat == FALSE] <- "-"
+gsea_pathways_final_reformat[gsea_pathways_final_reformat == TRUE] <- "+"
+
+# test WITHOUT NON IO360 genes removed, works the same
+gsea_pathways_test_reformat <- data.frame(matrix(0, ncol=ncol(gsea_pathways_test), nrow=nrow(reformat_rawcounts)))
+row.names(gsea_pathways_test_reformat) <- row.names(reformat_rawcounts)
+colnames(gsea_pathways_test_reformat) <- colnames(gsea_pathways_test)
+for (i in 1:ncol(gsea_pathways_test_reformat)){
+  gsea_pathways_test_reformat[,i] <- row.names(gsea_pathways_test_reformat) %in% gsea_pathways_test[,i]
+}
+gsea_pathways_test_reformat[gsea_pathways_test_reformat == FALSE] <- "-"
+gsea_pathways_test_reformat[gsea_pathways_test_reformat == TRUE] <- "+"
+
+# define annotation colors
+annot_colors <- list(EBV_final = c("Negative"="#A7BEAE", "Positive"="#B85042"), 
+                    Sex = c("F"="#ffb4a2", "M"="#4d7298"), 
+                    Age_Diagnosis_Group = c("under45"="#e2cfea", "over45"="#bb8588"), 
+                    Diagnosis_abbrev2 = c("NS"="#92829e", "Other"="#bfbfbf"), 
+                    Clinical_Stage_Group = c("Limited"="#eec170", "Advanced"="#f58549", "unknown"="#bfbfbf"),
+                    Treatment = c("Untreated"="#f0f0f0", "Treated"="#6290c8"), 
+                    Bcell_Tcell = c("B cell"="#33a547", "T cell"="#2073ac", "indeterminate"="#262626"), 
+                    PDL1_IHC = c("neg"="#f0f0f0", "pos"="#f58549", "unknown"="#bfbfbf"), 
+                    PDL2_IHC = c("neg"="#f0f0f0", "pos"="#f58549", "unknown"="#bfbfbf"), 
+                    B2M_IHC = c("neg"="#f0f0f0", "pos"="#f58549", "cytoplasmic"="#e8871e", "unknown"="#bfbfbf"), 
+                    MHCI_IHC = c("neg"="#f0f0f0", "pos"="#f58549", "cytoplasmic"="#e8871e", "unknown"="#bfbfbf"),
+                    MHCII_IHC = c("neg"="#f0f0f0", "pos"="#f58549", "unknown"="#bfbfbf"), 
+                    CT2A_IHC = c("neg"="#f0f0f0", "pos"="#f58549", "cytoplasmic"="#e8871e", "unknown"="#bfbfbf"), 
                     Release_of_Cancer_Cell_Antigens = c("+"="grey10", "-"="grey90"), 
                     Cancer_Antigen_Presentation = c("+"="grey10", "-"="grey90"), 
                     T_cell_Priming_and_Activation = c("+"="grey10", "-"="grey90"), 
@@ -257,201 +389,469 @@ annot_color <- list(EBV_final = c(Negative="cyan4", Positive="deeppink4", unknow
                     Cell_Cycle_and_Proliferation = c("+"="grey10", "-"="grey90"), 
                     Tumor_Intrinsic_Factors = c("+"="grey10", "-"="grey90"), 
                     Immunometabolism = c("+"="grey10", "-"="grey90"), 
-                    Common_Signaling_Pathways = c("+"="grey10", "-"="grey90"))
-##########
+                    Common_Signaling_Pathways = c("+"="grey10", "-"="grey90"), 
+                    B_cells_naive = c("+"="grey10", "-"="grey90"), 
+                    B_cells_memory = c("+"="grey10", "-"="grey90"), 
+                    Plasma_cells = c("+"="grey10", "-"="grey90"), 
+                    T_cells_CD8 = c("+"="grey10", "-"="grey90"), 
+                    T_cells_CD4_naive = c("+"="grey10", "-"="grey90"), 
+                    T_cells_CD4_memory_resting = c("+"="grey10", "-"="grey90"), 
+                    T_cells_CD4_memory_activated = c("+"="grey10", "-"="grey90"), 
+                    T_cells_follicular_helper = c("+"="grey10", "-"="grey90"), 
+                    T_cells_regulatory = c("+"="grey10", "-"="grey90"), 
+                    T_cells_gamma_delta = c("+"="grey10", "-"="grey90"), 
+                    NK_cells_resting = c("+"="grey10", "-"="grey90"), 
+                    NK_cells_activated = c("+"="grey10", "-"="grey90"), 
+                    Monocytes = c("+"="grey10", "-"="grey90"), 
+                    Macrophages_M0 = c("+"="grey10", "-"="grey90"), 
+                    Macrophages_M1 = c("+"="grey10", "-"="grey90"), 
+                    Macrophages_M2 = c("+"="grey10", "-"="grey90"), 
+                    Dendritic_cells_resting = c("+"="grey10", "-"="grey90"), 
+                    Dendritic_cells_activated = c("+"="grey10", "-"="grey90"), 
+                    Mast_cells_resting = c("+"="grey10", "-"="grey90"), 
+                    Mast_cells_activated = c("+"="grey10", "-"="grey90"), 
+                    Eosinophils = c("+"="grey10", "-"="grey90"), 
+                    Neutrophils = c("+"="grey10", "-"="grey90"), 
+                    HALLMARK_INTERFERON_ALPHA_RESPONSE = c("+"="grey10", "-"="grey90"), 
+                    HALLMARK_INTERFERON_GAMMA_RESPONSE = c("+"="grey10", "-"="grey90"), 
+                    HALLMARK_IL6_JAK_STAT3_SIGNALING = c("+"="grey10", "-"="grey90"), 
+                    HALLMARK_COMPLEMENT = c("+"="grey10", "-"="grey90"), 
+                    HALLMARK_INFLAMMATORY_RESPONSE = c("+"="grey10", "-"="grey90"), 
+                    KEGG_ANTIGEN_PROCESSING_AND_PRESENTATION = c("+"="grey10", "-"="grey90"), 
+                    KEGG_NATURAL_KILLER_CELL_MEDIATED_CYTOTOXICITY = c("+"="grey10", "-"="grey90"), 
+                    KEGG_CYTOKINE_CYTOKINE_RECEPTOR_INTERA.ERACTION = c("+"="grey10", "-"="grey90"), 
+                    KEGG_CHEMOKINE_SIGNALING_PATHWAY = c("+"="grey10", "-"="grey90"), 
+                    WIELAND_UP_BY_HBV_INFECTION = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_INTERFERON_SIGNALING = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_INTERFERON_GAMMA_SIGNALING = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_INTERFERON_ALPHA_BETA_SIGNALING = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_MHC_CLASS_II_ANTIGEN_PRESENTATION = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_IMMUNOREGULATORY_INTERACTIONS_BETWEEN_A_LYMPHOID_AND_A_NON_LYMPHOID_CELL = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_PD_1_SIGNALING = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_CYTOKINE_SIGNALING_IN_IMMUNE_SYSTEM = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_ADAPTIVE_IMMUNE_SYSTEM = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_SIGNALING_BY_INTERLEUKINS = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_INNATE_IMMUNE_SYSTEM = c("+"="grey10", "-"="grey90"), 
+                    HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION = c("+"="grey10", "-"="grey90"), 
+                    HALLMARK_REACTOME_INTERFERON_SIGNALING = c("+"="grey10", "-"="grey90"), 
+                    HALLMARK_ALLOGRAFT_REJECTION = c("+"="grey10", "-"="grey90"), 
+                    HALLMARK_TNFA_SIGNALING_VIA_NFKB = c("+"="grey10", "-"="grey90"), 
+                    HALLMARK_NOTCH_SIGNALING = c("+"="grey10", "-"="grey90"), 
+                    KEGG_CYTOKINE_CYTOKINE_RECEPTOR_INTERACTION = c("+"="grey10", "-"="grey90"), 
+                    KEGG_GRAFT_VERSUS_HOST_DISEASE = c("+"="grey10", "-"="grey90"), 
+                    KEGG_ALLOGRAFT_REJECTION = c("+"="grey10", "-"="grey90"), 
+                    KEGG_TYPE_I_DIABETES_MELLITUS = c("+"="grey10", "-"="grey90"), 
+                    KEGG_CELL_ADHESION_MOLECULES_CAMS = c("+"="grey10", "-"="grey90"), 
+                    KEGG_AUTOIMMUNE_THYROID_DISEASE = c("+"="grey10", "-"="grey90"), 
+                    KEGG_VIRAL_MYOCARDITIS = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_CHEMOKINE_RECEPTORS_BIND_CHEMOKINES = c("+"="grey10", "-"="grey90"), 
+                    REACTOME_INTERLEUKIN_4_AND_INTERLEUKIN_13_SIGNALING = c("+"="grey10", "-"="grey90"), 
+                    BLANCO_MELO_RESPIRATORY_SYNCYTIAL_VIRUS_INFECTION_A594_CELLS_UP = c("+"="grey10", "-"="grey90"), 
+                    WALLACE_PROSTATE_CANCER_RACE_UP = c("+"="grey10", "-"="grey90"), 
+                    BLANCO_MELO_HUMAN_PARAINFLUENZA_VIRUS_3_INFECTION_A594_CELLS_UP = c("+"="grey10", "-"="grey90"), 
+                    SANA_RESPONSE_TO_IFNG_UP = c("+"="grey10", "-"="grey90"), 
+                    BLANCO_MELO_COVID19_SARS_COV_2_INFECTION_CALU3_CELLS_UP = c("+"="grey10", "-"="grey90"), 
+                    WP_ALLOGRAFT_REJECTION = c("+"="grey10", "-"="grey90"), 
+                    MARKEY_RB1_ACUTE_LOF_DN = c("+"="grey10", "-"="grey90"), 
+                    MARKEY_RB1_ACUTE_LOF_DN = c("+"="grey10", "-"="grey90"), 
+                    ICHIBA_GRAFT_VERSUS_HOST_DISEASE_D7_UP = c("+"="grey10", "-"="grey90"), 
+                    Interferon_alpha_beta_gamma_HR = c("+"="grey10", "-"="grey90"))
 
+make_heatmap <- function(zscore_normcounts, meta, annot_col_labels, annot_row = NULL, annot_colors, col_break, row_break = NULL, title){
+  annot_col <- meta %>% dplyr::select(all_of(annot_col_labels))
+  my_breaks <- seq(-2,2, by=0.1)
+  my_color <- colorpanel(n = length(my_breaks) - 1, low = "blue", mid = "grey88", high = "red")
+  x <- pheatmap(zscore_normcounts, legend = T, color = my_color, breaks = my_breaks, show_colnames = T, show_rownames = T, 
+         cluster_rows = F, cluster_cols = F, annotation_col = annot_col, annotation_row = annot_row, 
+         gaps_col = c(col_break), gaps_row = c(row_break), annotation_colors = annot_colors, annotation_legend = T, angle_col = 90, 
+         border_color = "white", main = paste(title, "sorted by L2FC"))
+  ggsave(paste(title, "_heatmap.pdf", sep = ""), 
+       plot = x, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 600, 
+       height = 600, 
+       units = "mm")
+}
 
-# create heatmap
-#pdf("lesion_response_heatmap.pdf", 10, 10)
-pheatmap(all_z_score, legend = T, color = my_color, breaks = my_breaks, show_colnames = T, show_rownames = T, 
-         cluster_rows = F, cluster_cols = T, annotation_col = annot_col, 
-         annotation_colors = annot_color, annotation_legend = T, angle_col = 90, border_color = "white", 
-         main = paste("p-adjusted <", p_val, "sorted by L2FC"))
-#dev.off()
+# EBV heatmap with pancancer (NanoString) signatures, 0.05
+make_heatmap(zscore_normcounts = zscore_normcounts_EBV_0.05, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = pancancer %>% dplyr::select(-Internal_Reference_Genes), 
+             annot_colors = annot_colors, col_break = 7, title = "EBV_pancancer_padj0.05")
 
+# EBV heatmap with pancancer (NanoString) signatures, 0.01
+make_heatmap(zscore_normcounts = zscore_normcounts_EBV_0.01, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = pancancer %>% dplyr::select(-Internal_Reference_Genes), 
+             annot_colors = annot_colors, col_break = 7, title = "EBV_pancancer_padj0.01")
+
+# EBV heatmap with LM22 signatures, 0.05
+make_heatmap(zscore_normcounts = zscore_normcounts_EBV_0.05, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = lm22_io360, 
+             annot_colors = annot_colors, col_break = 7, title = "EBV_LM22_padj0.05")
+
+# EBV heatmap with LM22 signatures, 0.01
+make_heatmap(zscore_normcounts = zscore_normcounts_EBV_0.01, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = lm22_io360, 
+             annot_colors = annot_colors, col_break = 7, title = "EBV_LM22_padj0.01")
+
+# EBV heatmap with gsea signatures, 0.05
+make_heatmap(zscore_normcounts = zscore_normcounts_EBV_0.05, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = gsea_pathways_reformat, 
+             annot_colors = annot_colors, col_break = 7, title = "EBV_gsea_padj0.05")
+
+# EBV heatmap with gsea signatures, 0.01
+make_heatmap(zscore_normcounts = zscore_normcounts_EBV_0.01, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = gsea_pathways_reformat, 
+             annot_colors = annot_colors, col_break = 7, title = "EBV_gsea_padj0.01")
+
+# resort rows by consistency
+row_order_df <- zscore_normcounts_EBV_0.05 %>% dplyr::select("HL_19", "HL_23", "HL_32", "HL_33", "HL_18", "HL_21", "HL_15") %>% 
+  dplyr::filter(rownames(.) %in% rownames(res_Ordered_EBV %>% dplyr::filter(padj < 0.05) %>% 
+  dplyr::filter(log2FoldChange > 0)))
+row_order_df[row_order_df < 0] <- 0
+row_order_df[row_order_df > 0] <- 1
+row_order_df <- row_order_df %>% mutate(total = rowSums(.)) %>% 
+  arrange(desc(total))
+row_order <- rownames(row_order_df)
+row_order_df <- zscore_normcounts_EBV_0.05 %>% dplyr::select(!c("HL_19", "HL_23", "HL_32", "HL_33", "HL_18", "HL_21", "HL_15")) %>% 
+  dplyr::filter(rownames(.) %in% rownames(res_Ordered_EBV %>% dplyr::filter(padj < 0.05) %>% 
+  dplyr::filter(log2FoldChange < 0)))
+row_order_df[row_order_df < 0] <- 0
+row_order_df[row_order_df > 0] <- 1
+row_order_df <- row_order_df %>% mutate(total = rowSums(.)) %>% 
+  arrange(desc(total))
+row_order <- append(row_order, rownames(row_order_df))
+test <- zscore_normcounts_EBV_0.05 %>% arrange(match(rownames(.), row_order))
+
+# EBV heatmap with gsea signatures ABBREV, 0.05 ***FINAL***
+make_heatmap(zscore_normcounts = test, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = gsea_pathways_abbrev_reformat, 
+             annot_colors = annot_colors, col_break = 7, row_break = 71,
+             title = "EBV_gseaABBREV_padj0.05")
+
+# EBV heatmap with gsea signatures FINAL, 0.05 ***FINAL*** (?)
+make_heatmap(zscore_normcounts = test, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = gsea_pathways_final_reformat, 
+             annot_colors = annot_colors, col_break = 7, row_break = 71,
+             title = "testEBV_gseaFINAL_padj0.05")
+
+# EBV heatmap with gsea signatures ABBREV, 0.01
+make_heatmap(zscore_normcounts = zscore_normcounts_EBV_0.01, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = gsea_pathways_abbrev_reformat, 
+             annot_colors = annot_colors, col_break = 7, row_break = 44, 
+             title = "EBV_gseaABBREV_padj0.01")
+
+# age heatmap with pancancer (NanoString) signatures, 0.05
+make_heatmap(zscore_normcounts = zscore_normcounts_age_0.05, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = pancancer %>% dplyr::select(-Internal_Reference_Genes), 
+             annot_colors = annot_colors, col_break = 24, title = "Age_pancancer_padj0.05")
+
+# age heatmap with pancancer (NanoString) signatures, 0.01
+make_heatmap(zscore_normcounts = zscore_normcounts_age_0.01, meta = samples_nanostring, 
+             annot_col_labels = c("EBV_final", "Diagnosis_abbrev2", "Treatment", "Sex", 
+                                  "Clinical_Stage_Group", "Age_Diagnosis_Group"), 
+             annot_row = pancancer %>% dplyr::select(-Internal_Reference_Genes), 
+             annot_colors = annot_colors, col_break = 24, title = "Age_pancancer_padj0.01")
+
+print("done!")
 ```
 
 ```{r}
-cibersort<-read.table("/Users/pourmalm/Desktop/CIBERSORTx_Job7_Results.txt", header = TRUE, sep = "\t")
-celldive<-read.table("/Users/pourmalm/Desktop/celldive.txt", header = TRUE, row.names = 1, sep = "\t")
-celldive<-t(celldive)
-celldive<-data.frame(celldive)
-celldive$H16_5562<-NULL
-celldive$HL_20<-NULL
-celldive$HL_26<-NULL
-celldive$HL_28<-NULL
-celldive$HL_32<-NULL
-# replace cell dive ID with sample ID in celldive
-i1 <- match(colnames(celldive), meta_nanostring$CellDive_ID)
-i2 <- !is.na(i1)
-colnames(celldive)[i2] <- rownames(meta_nanostring)[i1[i2]]
-celldive <- celldive %>% select(order(colnames(celldive)))
-# compute percentages for celldive
-for (i in 1:ncol(celldive)){
-  celldive[11, i] <- sum(celldive[,i], na.rm=T)
-}
-for (i in 1:ncol(celldive)){
-  for (j in 1:nrow(celldive)-1){
-    celldive[j,i]<-celldive[j,i]/celldive[11,i]
-  }
-}
-celldive <- celldive[-11,]
-celldive<-data.frame(t(celldive))
-rownames(cibersort) <- cibersort$Sample_ID
-cibersort$Sample_ID <- NULL
-celldive$Other <- NULL
-identical(rownames(cibersort), rownames(celldive))
-identical(colnames(cibersort), colnames(celldive))
-colnames(cibersort) <- c("T_CD4_A", "T_CD8_A", "T_Reg_A", "T_Other_A", "B_All_A", "NK_All_A", "Macrophage_A", "Plasma_A", 
-                         "Leukocyte_Other_A")
-bind2 <- cbind(celldive, cibersort)
-identical(rownames(bind2), rownames(meta_nanostring))
-bind2$main_pop_IHC <- meta_nanostring$`B-cell.rich/T-cell.rich/indeterminate`
 
-##
+### create gene expression heatmap LM22 genes (sort by EBV)
 
+for (i in 1:ncol(lm22)){
+  name = colnames(lm22)[i]
+  all_subset <- subset(reformat_normcounts, rownames(reformat_normcounts) %in% lm22[,i])
+  log2_normcounts <- log2(all_subset) %>% t() %>% as.data.frame()
+  #reorder columns by EBV
+  log2_normcounts_reorder <- log2_normcounts %>% 
+    merge((samples_nanostring %>% dplyr::select(EBV_final)), by = 'row.names') %>% 
+    arrange(desc(EBV_final)) %>% 
+    column_to_rownames(var = "Row.names") %>% 
+    dplyr::select(-EBV_final) %>% 
+    t() %>% 
+    as.data.frame()
+  x = pheatmap(log2_normcounts_reorder, legend = T, show_colnames = T, show_rownames = T, 
+           cluster_rows = F, cluster_cols = F, angle_col = 90, 
+           border_color = "white", gaps_col = c(7))
+  ggsave(paste(name, "_heatmap.pdf", sep = ""), 
+       plot = x, 
+       path = "/Users/pourmalm/Desktop/", 
+       device = "pdf", 
+       width = 300, 
+       height = 300, 
+       units = "mm")
+}
+
+print("done!")
+```
+
+```{r}
+
+### CIBERSORT (NanoString)
+
+# compare cibersort fractions by EBV
+cibersort_celltype_order <- c("T.cells.CD4.naive", "T.cells.CD4.memory.resting", "T.cells.CD4.memory.activated", "T.cells.follicular.helper", 
+                              "T.cells.CD8", "T.cells.regulatory..Tregs.", "T.cells.gamma.delta", "B.cells.naive", "B.cells.memory", 
+                              "NK.cells.resting", "NK.cells.activated", "Monocytes", "Macrophages.M0", "Macrophages.M1", "Macrophages.M2", 
+                              "Dendritic.cells.resting", "Dendritic.cells.activated", "Mast.cells.resting", "Mast.cells.activated", 
+                              "Eosinophils", "Neutrophils", "Plasma.cells")
+cibersort <- cibersort %>% 
+  dplyr::filter(Mixture %in% samples_nanostring$Patient_ID) %>% 
+  column_to_rownames("Mixture") %>% 
+  dplyr::select(-all_of(c("P.value", "Correlation", "RMSE")))
+cibersort_medians <- cibersort %>% 
+  dplyr::bind_cols(samples_nanostring %>% dplyr::select(EBV_final)) %>% 
+  group_by(EBV_final) %>% 
+  summarise(across(everything(), list(median)))
+p <- cibersort %>% 
+  dplyr::bind_cols(samples_nanostring %>% dplyr::select(EBV_final)) %>% 
+  pivot_longer(!EBV_final, names_to = "celltype", values_to = "fraction") %>% 
+  ggplot(aes(x = factor(celltype, levels = cibersort_celltype_order), y = fraction, fill = factor(EBV_final, levels = c("Positive", "Negative")))) +
+  geom_boxplot(outlier.shape = NA) + 
+  geom_point(position = position_jitterdodge(0.1), size = 0.1) + 
+  scale_fill_manual(values = c("Positive"="#B85042", "Negative"="#A7BEAE")) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) + 
+  labs(fill = "EBV status") + 
+  xlab("Cell type") + 
+  ylab("Fraction (%)") + 
+  stat_compare_means(aes(group = EBV_final), method = "wilcox.test", label = "p.format", size = 1)
+ggsave("cibersort_celltype_by_EBV.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 240, 
+       height = 160, 
+       units = "mm")
+
+print("done!")
+```
+
+```{r}
+
+### mpIF:NanoString correlation (celltype:celltype, protein:gene)
+
+# using previously filtered samples_nanostring and cibersort
+# drop samples without matched mpIF and nanostring, match cell type categories
+summarize_celltypes <- function(mpif_celltype, cibersort, samples_nanostring){
+  samples_nanostring_sub <- samples_nanostring %>% 
+    filter(!Protein_Multiplexed_IF == 0)
+  drop <- outersect(samples_nanostring_sub$CellDive_ID, colnames(mpif_celltype %>% dplyr::select(-c(Subtype))))
+  mpif_celltype_sub <- mpif_celltype %>% 
+    dplyr::select(-all_of(drop)) %>% 
+    column_to_rownames("Subtype")
+  # replace column names from CellDive ID to patient ID
+  colnames(mpif_celltype_sub) <- samples_nanostring_sub$Patient_ID
+  drop2 <- outersect(rownames(cibersort), samples_nanostring_sub$Patient_ID)
+  cibersort_sub <- cibersort[!(row.names(cibersort) %in% drop2),]
+  mpif_celltype_sub_sum <- mpif_celltype_sub %>% 
+    replace(is.na(.), 0) %>%  
+    t() %>% 
+    as.data.frame() %>% 
+    dplyr::select(-all_of("HRS")) %>% 
+    mutate("Total" = rowSums(.)) %>% 
+    mutate("T_Reg" = rowSums(across(c("T_Reg4", "T_Reg8", "T_RegDN")))) %>% 
+    rename("B_cell" = "B_All") %>% 
+    mutate("NK_cell" = rowSums(across(c("NK", "NKT", "NKT_CD4", "NKT_CD8")))) %>% 
+    #mutate("Macrophage_monocyte" = rowSums(across(c("Macrophage_MHCIIpos", "Macrophage_MHCIIneg", "Macrophage_Other")))) %>% 
+    rename("Macrophage_M1" = "Macrophage_MHCIIpos") %>% 
+    rename("Macrophage_M2" = "Macrophage_MHCIIneg") %>% 
+    dplyr::select(c("T_CD4", "T_CD8", "T_Reg", "B_cell", "NK_cell", "Macrophage_M1", "Macrophage_M2", "Plasma", "Total")) %>% 
+    mutate_at(vars(-Total), list(~. / Total)) %>% 
+    dplyr::select(-all_of("Total")) %>% 
+    rename("T_CD4_mpif" = "T_CD4", "T_CD8_mpif" = "T_CD8", "T_Reg_mpif" = "T_Reg", "B_cell_mpif" = "B_cell", 
+           "NK_cell_mpif" = "NK_cell", "Macrophage_M1_mpif" = "Macrophage_M1", "Macrophage_M2_mpif" = "Macrophage_M2", "Plasma_cell_mpif" = "Plasma")
+  colnames(cibersort_sub) <- gsub('[.]', "_", colnames(cibersort_sub))
+  cibersort_sub_sum <- cibersort_sub %>% 
+    rename("T_cells_regulatory_Tregs" = "T_cells_regulatory__Tregs_") %>% 
+    dplyr::select(-all_of(c("T_cells_gamma_delta", "Mast_cells_resting", "Mast_cells_activated", "Eosinophils", "Neutrophils"))) %>% 
+    mutate("T_CD4" = rowSums(across(c("T_cells_CD4_naive", "T_cells_CD4_memory_resting", 
+                                "T_cells_CD4_memory_activated", "T_cells_follicular_helper")))) %>% 
+    rename("T_CD8" = "T_cells_CD8") %>% 
+    rename("T_Reg" = "T_cells_regulatory_Tregs") %>% 
+    mutate("B_cell" = rowSums(across(c("B_cells_naive", "B_cells_memory")))) %>% 
+    mutate("NK_cell" = rowSums(across(c("NK_cells_resting", "NK_cells_activated")))) %>% 
+    #mutate("Macrophage_monocyte" = rowSums(across(c("Macrophages_M0", "Macrophages_M1", "Macrophages_M2", "Monocytes", "Dendritic_cells_resting", "Dendritic_cells_activated")))) %>% 
+    rename("Macrophage_M1" = "Macrophages_M1") %>% 
+    rename("Macrophage_M2" = "Macrophages_M2") %>% 
+    dplyr::select(all_of(c("T_CD4", "T_CD8", "T_Reg", "B_cell", "NK_cell", "Macrophage_M1", "Macrophage_M2", "Plasma_cells"))) %>% 
+    rename("T_CD4_rna" = "T_CD4", "T_CD8_rna" = "T_CD8", "T_Reg_rna" = "T_Reg", "B_cell_rna" = "B_cell", 
+           "NK_cell_rna" = "NK_cell", "Macrophage_M1_rna" = "Macrophage_M1", "Macrophage_M2_rna" = "Macrophage_M2", "Plasma_cell_rna" = "Plasma_cells")
+  return(list(mpif_celltype_sub_sum, cibersort_sub_sum, samples_nanostring_sub))
+}
+
+mpif_celltype_sum_temp <- summarize_celltypes(mpif_celltype = mpif_celltype, cibersort = cibersort, samples_nanostring = samples_nanostring)
+mpif_celltype_sum <- mpif_celltype_sum_temp[[1]]
+cibersort_sum <- mpif_celltype_sum_temp[[2]]
+samples_nanostring_sub <- mpif_celltype_sum_temp[[3]]
+rm(mpif_celltype_sum_temp)
+
+# correlate mpIF and cibersort cell types
+bind <- cbind(mpif_celltype_sum, cibersort_sum)
 # create list of celldive, cibersort pairs
-plot_list2 <- data.frame(matrix(ncol = 2, nrow = ncol(celldive)))
-colnames(plot_list2) <- c('celldive', 'cibersort')
-plot_list2$celldive <- colnames(celldive)
-plot_list2$cibersort <- colnames(cibersort)
+plot_list <- data.frame(matrix(ncol = 2, nrow = ncol(cibersort_sum)))
+colnames(plot_list) <- c('mpif', 'cibersort')
+plot_list$mpif <- colnames(mpif_celltype_sum)
+plot_list$cibersort <- colnames(cibersort_sum)
 # create list of all the scatter plots with gene/protein correlation at the sample level and print
 plts <- list()
-for (i in 1:nrow(plot_list2)){
-  print(i)
-  p <- ggscatter(bind2, x = plot_list2$celldive[i], y = plot_list2$cibersort[i], 
-            add ="reg.line", # Add regressin line, 
+for (i in 1:nrow(plot_list)){
+  p <- ggscatter(bind, x = plot_list$mpif[i], y = plot_list$cibersort[i], 
+            add ="reg.line", # Add regression line, 
             add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
             conf.int = TRUE, 
-            xlab = paste(plot_list2$celldive[i], "(mpIF)"), 
-            ylab =  paste(str_remove(plot_list2$cibersort[i], "_A"), "(cibersort)")) # Add confidence interval 
+            xlab = paste(str_remove(plot_list$mpif[i], "_mpif"), "(mpIF, % immune)"), 
+            ylab =  paste(str_remove(plot_list$cibersort[i], "_rna"), "(cibersort)")) # Add confidence interval 
   p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
   print(p)
   plts[[i]] <- p  # add each plot into plot list
 }
-#multiplot(plotlist = plts, cols = 6)
-ggsave("celldive-cibersort_correl.pdf", 
+ggsave("mpIF_nanostring_celltype_correl.pdf", 
        gridExtra::marrangeGrob(grobs = plts, nrow = 3, ncol = 3),
        path = "/Users/pourmalm/Desktop", 
        device = "pdf", 
        width = 300, 
        height = 300, 
        units = "mm")
-
-#add main cell population color by IHC to scatter plot (B Cell)
-p <- ggscatter(bind2, x = "B_All", y = "B_All_A",
-            color = "main_pop_IHC", 
+# add main cell population color by IHC to scatter plot (B Cell/T cell)
+p <- bind %>% bind_cols(samples_nanostring_sub %>% dplyr::select(Bcell_Tcell)) %>% 
+  ggscatter(x = "B_cell_mpif", y = "B_cell_rna", 
+            color = "Bcell_Tcell", 
             add ="reg.line", # Add regressin line, 
             add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
             conf.int = TRUE, 
-            xlab = "B_All (mpIF)", 
-            ylab =  "B_All (cibersort)", 
-            palette = c("B-cell" = "green", "T-cell" = "blue", "indeterminate" = "grey20")) # Add confidence interval 
+            xlab = "B cell (mpIF, % immune)", 
+            ylab =  "B cell (cibersort)", 
+            palette = c("B cell" = "green", "T cell" = "blue", "indeterminate" = "grey20")) # Add confidence interval 
 p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
-ggsave("b_cell_celldive-cibersort-ihc.pdf", p)
-
-# pool all T cell pops
-bind2$T_All <- bind2$T_CD4 + bind2$T_CD8 + bind2$T_Reg + bind2$T_Other
-bind2$T_All_A <- bind2$T_CD4_A + bind2$T_CD8_A + bind2$T_Reg_A + bind2$T_Other_A
-
-#add main cell population color by IHC to scatter plot (B Cell)
-p <- ggscatter(bind2, x = "T_All", y = "T_All_A",
-            color = "main_pop_IHC", 
+ggsave("mpIF_nanostring_celltype_correl_Bcell.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 120, 
+       height = 120, 
+       units = "mm")
+p <- bind %>% bind_cols(samples_nanostring_sub %>% dplyr::select(Bcell_Tcell)) %>% 
+  mutate("T_All_mpif" = rowSums(across(c("T_CD4_mpif", "T_CD8_mpif", "T_Reg_mpif")))) %>% 
+  mutate("T_All_rna" = rowSums(across(c("T_CD4_rna", "T_CD8_rna", "T_Reg_rna")))) %>% 
+  ggscatter(x = "T_All_mpif", y = "T_All_rna", 
+            color = "Bcell_Tcell", 
             add ="reg.line", # Add regressin line, 
             add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
             conf.int = TRUE, 
-            xlab = "T_All (mpIF)", 
-            ylab =  "T_All (cibersort)", 
-            palette = c("B-cell" = "green", "T-cell" = "blue", "indeterminate" = "grey20")) # Add confidence interval 
+            xlab = "T cell (mpIF, % immune)", 
+            ylab =  "T cell (cibersort)", 
+            palette = c("B cell" = "green", "T cell" = "blue", "indeterminate" = "grey20")) # Add confidence interval 
 p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
-ggsave("t_cell_celldive-cibersort-ihc.pdf", p)
+ggsave("mpIF_nanostring_celltype_correl_Tcell.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 120, 
+       height = 120, 
+       units = "mm")
+# add EBV_final color to scatter plot (CD8 and M1 only)
+p <- bind %>% bind_cols(samples_nanostring_sub %>% dplyr::select(EBV_final)) %>% 
+  ggscatter(x = "T_CD8_mpif", y = "T_CD8_rna", 
+            color = "EBV_final", 
+            add ="reg.line", # Add regressin line, 
+            add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
+            conf.int = TRUE, 
+            xlab = "T_CD8 (mpIF, % immune)", 
+            ylab =  "T_CD8 (cibersort)", 
+            palette = c("Positive"="#B85042", "Negative"="#A7BEAE")) # Add confidence interval 
+p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
+ggsave("mpIF_nanostring_celltype_correl_CD8.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 120, 
+       height = 120, 
+       units = "mm")
+p <- bind %>% bind_cols(samples_nanostring_sub %>% dplyr::select(EBV_final)) %>% 
+  ggscatter(x = "Macrophage_M1_mpif", y = "Macrophage_M1_rna", 
+            color = "EBV_final", 
+            add ="reg.line", # Add regressin line, 
+            add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
+            conf.int = TRUE, 
+            xlab = "M1 (mpIF, % immune)", 
+            ylab =  "M1 (cibersort)", 
+            palette = c("Positive"="#B85042", "Negative"="#A7BEAE")) # Add confidence interval 
+p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
+ggsave("mpIF_nanostring_celltype_correl_M1.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 120, 
+       height = 120, 
+       units = "mm")
 
-```
-```
-
-
-```{r}
-
-#explore tumor functional marker expression
-markersF <- c("B2M.PCT", "B7H3.PCT", "CD27.PCT", "CD40.PCT", "CD40L.PCT", "ICOS.PCT", "IDO1.PCT", "KI67.PCT", "LAG3.PCT", "MHCI.PCT", "MHCII.PCT", "MRC1.PCT", "PD1.PCT", "PDL1.PCT", "TGM2.PCT", "TIM3.PCT", "VISTA.PCT")
-
-plot_boxplot <- function(dataframe, samples_meta, marker){
-  marker <- enquo(marker)
-  dataframe %>% 
-    select(-c("FOV_ID", "HRS Cells", "N.Markers")) %>% 
-    select(-contains(".N")) %>% 
-    left_join(samples_meta %>% 
-                select(Patient_ID, CellDive_ID), by = "CellDive_ID") %>% 
-    select(-CellDive_ID) %>% 
-    relocate(Patient_ID) %>% 
-    ggplot(aes(x = Patient_ID, y = !!marker)) + 
-    geom_boxplot() + 
-    geom_jitter(shape = 16, size = 1, position = position_jitter(0.2)) + 
-    theme_bw() + 
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
-}
-
-plot_grid(plot_boxplot(pTumor_FOV, samples, B2M.PCT), 
-          plot_boxplot(pTumor_FOV, samples, B7H3.PCT), 
-          plot_boxplot(pTumor_FOV, samples, CD27.PCT), 
-          plot_boxplot(pTumor_FOV, samples, CD40.PCT))
-
-plot_grid(plot_boxplot(pTumor_FOV, samples, CD40L.PCT), 
-          plot_boxplot(pTumor_FOV, samples, ICOS.PCT), 
-          plot_boxplot(pTumor_FOV, samples, IDO1.PCT), 
-          plot_boxplot(pTumor_FOV, samples, KI67.PCT))
-
-plot_grid(plot_boxplot(pTumor_FOV, samples, LAG3.PCT), 
-          plot_boxplot(pTumor_FOV, samples, MHCI.PCT), 
-          plot_boxplot(pTumor_FOV, samples, MHCII.PCT), 
-          plot_boxplot(pTumor_FOV, samples, MRC1.PCT))
-
-plot_grid(plot_boxplot(pTumor_FOV, samples, PD1.PCT), 
-          plot_boxplot(pTumor_FOV, samples, PDL1.PCT), 
-          plot_boxplot(pTumor_FOV, samples, TGM2.PCT), 
-          plot_boxplot(pTumor_FOV, samples, TIM3.PCT), 
-          plot_boxplot(pTumor_FOV, samples, VISTA.PCT))
-          
-```
-
-```{r}
-
-##gene:protein (cell dive - total DAPI cells) correlation
-
-# list of genes in cell dive panel
-gene_list <- c("B2M", "CD276", "CD14", "CD163", "MS4A1", "CD27", "CD3D", "CD3E","CD3G", "CD30", "CD40", "CD40LG", "CD4", 
+# correlate mpIF protein:nanostring:gene (list genes in cell dive panel with corresponding proteins)
+gene_list <- c("B2M", "CD276", "CD14", "CD163", "MS4A1", "CD27", "CD3D", "CD3E","CD3G", "TNFRSF8", "CD4", "CD40", "CD40LG", 
                "CD45RA", "CD45RB", "CD45RO", "NCAM1", "CD8A", "CD8B", "FOXP3", "ICOS", "IDO1", "MKI67", "LAG3", 
-               "HLA-A", "HLA-B", "HLA-C", "HLA-DRB5", "HLA-DRB5", "HLA-DRA", "MRC1", "IRF4", "PDCD1", "CD274", "HAVCR2", 
+               "HLA-A", "HLA-B", "HLA-C", "HLA-E", "HLA-F", "HLA-DMA", "HLA-DMB", "HLA-DOA", "HLA-DOB", "HLA-DPA1", "HLA-DPB1", 
+               "HLA-DQA1", "HLA-DQA2", "HLA-DQB1", "HLA-DRA", "HLA-DRB1", "HLA-DRB5", "MRC1", "IRF4", "PDCD1", "CD274", "HAVCR2", 
                "VSIR")
-common_genes <- data.frame(t(subset(zscore_counts, rownames(zscore_counts) %in% gene_list)))
-# replace cell dive ID with sample ID in counts in pDAPI and pTumor_sample and pTumor_FOV
-p1 <- match(rownames(pDAPI), samples$CellDive_ID)
-p2 <- !is.na(p1)
-rownames(pDAPI)[p2] <- rownames(samples)[p1[p2]]
-pDAPI <- pDAPI %>% arrange(row.names(pDAPI))
-t1 <- match(rownames(pTumor_sample), samples$CellDive_ID)
-t2 <- !is.na(t1)
-rownames(pTumor_sample)[t2] <- rownames(samples)[t1[t2]]
-pTumor_sample <- pTumor_sample %>% arrange(row.names(pTumor_sample))
-# drop samples without nanostring data in pDAPI and pTumor
-pDAPI_nanostring <- pDAPI[complete.cases(samples$Nanostring_ID), ]
-#pTumor_nanostring <- pTumor[complete.cases(samples$Nanostring_ID), ]
-identical(rownames(pDAPI_nanostring), rownames(common_genes))
-bind <- data.frame(cbind(pDAPI_nanostring, common_genes))
+# ordered by reformat_normcounts_gene_sub colnames below
+protein_list <- c("B2M_protein", "B7H3_protein", "CD14_protein", "CD163_protein", "CD20_protein", "CD27_protein", "CD3_protein", 
+                  "CD3_protein", "CD3_protein", "CD30_protein", "CD4_protein", "CD40_protein", "CD40L_protein", "CD45_protein", 
+                  "CD45_protein", "CD45_protein", "CD56_protein", "CD8_protein", "CD8_protein", "FOXP3_protein", "ICOS_protein", 
+                  "IDO1_protein", "KI67_protein", "LAG3_protein", "MHCI_protein", "MHCI_protein", "MHCI_protein", "MHCI_protein", 
+                  "MHCI_protein", "MHCII_protein", "MHCII_protein", "MHCII_protein", "MHCII_protein", "MHCII_protein", 
+                  "MHCII_protein", "MHCII_protein", "MHCII_protein", "MHCII_protein", "MHCII_protein", "MHCII_protein", 
+                  "MHCII_protein", "MRC1_protein", "MUM1_protein", "PD1_protein", "PDL1_protein", "TIM3_protein", "VISTA_protein")
+# subset nanostring genes to only those in mpif (CD138, TGM2 mpif proteins not in nanostring)
+# subset samples to those with both mpif and nanostring
+reformat_normcounts_gene_sub <- data.frame(t(subset(reformat_normcounts, rownames(reformat_normcounts) %in% gene_list)))
+drop3 <- outersect(rownames(reformat_normcounts_gene_sub), samples_nanostring_sub$Patient_ID)
+reformat_normcounts_gene_sub <- reformat_normcounts_gene_sub[!(row.names(reformat_normcounts_gene_sub) %in% drop3),]
+colnames(reformat_normcounts_gene_sub) <- gsub("\\.", "-", colnames(reformat_normcounts_gene_sub))
+reformat_normcounts_gene_sub <- reformat_normcounts_gene_sub %>% dplyr::select(gene_list)
+colnames(reformat_normcounts_gene_sub) <- paste(colnames(reformat_normcounts_gene_sub), "rna", sep = "_")
+drop4 <- outersect(rownames(pDAPI), samples_nanostring$CellDive_ID)
+pDAPI_sub <- pDAPI[!(row.names(pDAPI) %in% drop4),] %>% 
+  rownames_to_column("CellDive_ID") %>% 
+  merge(samples_nanostring_sub %>% dplyr::select(Patient_ID, CellDive_ID), by = "CellDive_ID") %>% 
+  arrange(Patient_ID) %>% 
+  column_to_rownames("Patient_ID") %>% 
+  dplyr::select(!all_of(matches(".N"))) %>% 
+  dplyr::select(!all_of(c("CellDive_ID", "N.Markers"))) %>%
+  rename_all(list(~stringr::str_replace_all(., ".PCT", "_protein")))
 # create list of protein-gene pairs
-plot_list <- data.frame(matrix(ncol = 2, nrow = ncol(common_genes)))
+plot_list <- data.frame(matrix(ncol = 2, nrow = length(gene_list)))
 colnames(plot_list) <- c('protein_x', 'gene_y')
-plot_list$gene_y <- colnames(common_genes)
-plot_list$protein_x <- c("B2M.PCT", "CD14.PCT", "CD163.PCT", "CD27.PCT", "PDL1.PCT", "B7H3.PCT", "CD3.PCT", "CD3.PCT", 
-                         "CD3.PCT", "CD4.PCT", "CD40.PCT", "CD40L.PCT", "CD45.PCT", "CD45.PCT", "CD45.PCT", "CD8.PCT", 
-                         "CD8.PCT", "FOXP3.PCT", "TIM3.PCT", "MHCI.PCT", "MHCI.PCT", "MHCI.PCT", "MHCII.PCT", "MHCII.PCT",  
-                         "ICOS.PCT", "IDO1.PCT", "MUM1.PCT", "LAG3.PCT", "KI67.PCT", "MRC1.PCT", "CD20.PCT", "CD56.PCT", 
-                         "PD1.PCT", "VISTA.PCT")
+plot_list$protein_x <- protein_list
+plot_list$gene_y <- colnames(reformat_normcounts_gene_sub)
+plot_list <- as.data.frame(lapply(plot_list, function(x) (gsub("-", "_", x))))
+# bind mpIF, nanostring tables
+bind <- cbind(pDAPI_sub, reformat_normcounts_gene_sub)
+colnames(bind) <- lapply(colnames(bind), function(x) (gsub("-", "_", x)))
 # create list of all the scatter plots with gene/protein correlation at the sample level and print
 plts <- list()
 for (i in 1:nrow(plot_list)){
   p <- ggscatter(bind, x = plot_list$protein_x[i], y = plot_list$gene_y[i], 
-            add ="reg.line", # Add regressin line, 
+            add ="reg.line", # Add regression line, 
             add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
             conf.int = TRUE, 
             xlab = paste(str_remove(plot_list$protein_x[i], ".PCT")), 
@@ -461,139 +861,751 @@ for (i in 1:nrow(plot_list)){
   plts[[i]] <- p  # add each plot into plot list
 }
 #multiplot(plotlist = plts, cols = 6)
-ggsave("gene_protein-celldive_correl.pdf", 
-       gridExtra::marrangeGrob(grobs = plts, nrow = 6, ncol = 6),
+ggsave("mpIF_nanostring_protein-gene_correl.pdf", 
+       gridExtra::marrangeGrob(grobs = plts, nrow = 8, ncol = 6),
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 500, 
+       height = 500, 
+       units = "mm")
+#compare pDAPI against EBV for NanoString DE genes (CD8, MHCI, IDO1)
+p <- pDAPI_sub %>% merge(samples_nanostring_sub %>% dplyr::select(EBV_final), by = 0) %>% 
+  column_to_rownames("Row.names") %>% 
+  dplyr::select(CD8_protein, MHCI_protein, IDO1_protein, EBV_final) %>% 
+  pivot_longer(!EBV_final, names_to = "marker", values_to = "percent") %>% 
+  ggplot(aes(x = marker, y = percent, fill = EBV_final)) + 
+  geom_boxplot(outlier.shape = NA) + 
+  geom_point(position = position_jitterdodge(0.1), size = 0.1) + 
+  scale_fill_manual(values = c("Positive"="#B85042", "Negative"="#A7BEAE"))
+
+print("mpIF:NanoString correlation done!")
+```
+
+```{r}
+
+### RNA sequencing analysis
+
+mart <- useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl")
+# reformat results
+total_rna_reformat <- total_rna %>% 
+  dplyr::select(all_of(c("GeneID", "HL_17_R1", "HL_18_R1_a", "HL_30_R2", "HL_33_R2", "HL_34_R1", "HL_38_R1", "HL_39_R1"))) %>% 
+  rename("HL_17" = "HL_17_R1", "HL_18" = "HL_18_R1_a", "HL_30" = "HL_30_R2", "HL_33" = "HL_33_R2", "HL_34" = "HL_34_R1", "HL_38" = "HL_38_R1", "HL_39" = "HL_39_R1")
+total_rna_reformat$GeneID <- gsub("\\..*", "", total_rna_reformat[,1])
+IDs <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol"), 
+             filters = "ensembl_gene_id", 
+             values = total_rna_reformat[,1], 
+             mart = mart)
+total_rna_reformat <- total_rna_reformat %>% 
+  rename("ensembl_gene_id"= "GeneID") %>% 
+  merge(IDs, by = "ensembl_gene_id")
+# remove rows without hgnc
+total_rna_reformat <- total_rna_reformat[!(is.na(total_rna_reformat$hgnc_symbol) | total_rna_reformat$hgnc_symbol==""), ]
+# remove rows with repeated hgnc
+repeated_hgnc <- total_rna_reformat$hgnc_symbol[-pmatch(unique(total_rna_reformat$hgnc_symbol), total_rna_reformat$hgnc_symbol)]
+total_rna_reformat <- total_rna_reformat %>% 
+  filter(!hgnc_symbol %in% repeated_hgnc) %>% 
+  column_to_rownames("hgnc_symbol") %>% 
+  dplyr::select(-all_of("ensembl_gene_id"))
+
+# export for cibersort
+#write.table(total_rna_reformat %>% rownames_to_column(var = "gene_id"), "/Users/pourmalm/Desktop/cHL_total_rna_for_cibersort.txt", sep = "\t", row.names = F)
+# subset samples meta to include only UNTREATED samples with total RNA (7 total)
+samples_total_rna <- samples %>% 
+  filter(!RNA_Total_RNA == 0) %>% 
+  filter(Treatment == "Untreated")
+rownames(samples_total_rna) <- samples_total_rna$Patient_ID
+# cibersort, compare fractions by EBV
+cibersort_celltype_order <- c("T.cells.CD4.naive", "T.cells.CD4.memory.resting", "T.cells.CD4.memory.activated", "T.cells.follicular.helper", 
+                              "T.cells.CD8", "T.cells.regulatory..Tregs.", "T.cells.gamma.delta", "B.cells.naive", "B.cells.memory", 
+                              "NK.cells.resting", "NK.cells.activated", "Monocytes", "Macrophages.M0", "Macrophages.M1", "Macrophages.M2", 
+                              "Dendritic.cells.resting", "Dendritic.cells.activated", "Mast.cells.resting", "Mast.cells.activated", 
+                              "Eosinophils", "Neutrophils", "Plasma.cells")
+cibersort_totalRNA <- cibersort_totalRNA %>% 
+  dplyr::filter(Mixture %in% samples_total_rna$Patient_ID_old) %>% 
+  column_to_rownames("Mixture") %>% 
+  dplyr::select(-all_of(c("P.value", "Correlation", "RMSE")))
+cibersort_medians_totalrna <- cibersort_totalRNA %>% 
+  bind_cols(samples_total_rna %>% dplyr::select(all_of("EBV_final"))) %>% 
+  group_by(EBV_final) %>% 
+  summarise(across(everything(), list(median)))
+p <- cibersort_totalRNA %>% 
+  bind_cols(samples_total_rna %>% dplyr::select(all_of("EBV_final"))) %>% 
+  pivot_longer(!EBV_final, names_to = "celltype", values_to = "fraction") %>% 
+  ggplot(aes(x = factor(celltype, levels = cibersort_celltype_order), y = fraction, fill = factor(EBV_final, levels = c("Positive", "Negative")))) +
+  geom_boxplot(outlier.shape = NA) + 
+  geom_point(position = position_jitterdodge(0.1), size = 0.1) + 
+  scale_fill_manual(values = c("Positive"="#B85042", "Negative"="#A7BEAE")) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) + 
+  labs(fill = "EBV status") + 
+  xlab("Cell type") + 
+  ylab("Fraction (%)") + 
+  stat_compare_means(aes(group = EBV_final), method = "t.test", label = "p.format", size = 1)
+ggsave("cibersort_celltype_by_EBV_totalRNA.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 240, 
+       height = 160, 
+       units = "mm")
+# cibersort NanoString/cibersort total RNA correlation
+cibersort_totalRNAsamplesonly <- cibersort %>% 
+  filter(rownames(cibersort) %in% samples_total_rna$Patient_ID)
+colnames(cibersort_totalRNAsamplesonly) <- paste(colnames(cibersort_totalRNAsamplesonly), "nano", sep="_")
+bind <- cbind(cibersort_totalRNAsamplesonly, cibersort_totalRNA)
+# create list of celldive, cibersort pairs
+plot_list <- data.frame(matrix(ncol = 2, nrow = ncol(cibersort_totalRNAsamplesonly)))
+colnames(plot_list) <- c('nano', 'totalRNA')
+plot_list$nano <- colnames(cibersort_totalRNAsamplesonly)
+plot_list$totalRNA <- colnames(cibersort_totalRNA)
+# create list of all the scatter plots with gene/protein correlation at the sample level and print
+plts <- list()
+for (i in 1:nrow(plot_list)){
+  p <- ggscatter(bind, x = plot_list$nano[i], y = plot_list$totalRNA[i], 
+            add ="reg.line", # Add regression line, 
+            add.params = list(color = "grey", fill = "lightgray"), # Customize reg. line
+            conf.int = TRUE, 
+            xlab = paste(str_remove(plot_list$nano[i], "_nano"), "(NanoString)"), 
+            ylab =  paste(plot_list$totalRNA[i], "(Total RNA)")) # Add confidence interval
+  p <- p + stat_cor(method = "pearson", cor.coef.name	="R")
+  print(p)
+  plts[[i]] <- p  # add each plot into plot list
+}
+ggsave("nano_totalRNA_cibersort_correl.pdf", 
+       gridExtra::marrangeGrob(grobs = plts, nrow = 5, ncol = 5),
        path = "/Users/pourmalm/Desktop", 
        device = "pdf", 
        width = 300, 
        height = 300, 
        units = "mm")
+
+# differential expression by 'EBV_final'
+# make sure column names of count file = row names of meta data file
+identical(colnames(total_rna_reformat), rownames(samples_total_rna))
+dds_EBV_total <- DESeqDataSetFromMatrix(countData=total_rna_reformat, colData=samples_total_rna, design=~EBV_final)
+dds_EBV_total$EBV_final <- relevel(dds_EBV_total$EBV_final, "Negative")
+dds_EBV_total <- DESeq(dds_EBV_total)
+res_EBV_total <- results(dds_EBV_total, contrast = c("EBV_final", "Positive", "Negative"))
+res_Ordered_EBV_total <- res_EBV_total[order(res_EBV_total$padj),]
+res_Ordered_EBV_total <- data.frame(GeneID = rownames(res_Ordered_EBV_total), res_Ordered_EBV_total)
+res_Ordered_EBV_total$GeneID <- gsub("\\..*", "", res_Ordered_EBV_total[,1])
+
+# volcano, top 20 genes from both total and NanoString labeled
+nano_genes_top20 <- rownames(res_Ordered_EBV %>% dplyr::filter(padj < 0.05))[1:20]
+totalrna_genes_top20 <- rownames(res_Ordered_EBV_total %>% dplyr::filter(padj < 0.05))[1:20]
+sig_overlap_genes <- intersect(rownames(res_Ordered_EBV %>% dplyr::filter(padj < 0.05)), rownames(res_Ordered_EBV_total %>% dplyr::filter(padj < 0.05)))
+label <- union(nano_genes_top20, totalrna_genes_top20)
+label <- union(label, sig_overlap_genes)
+p <- EnhancedVolcano(res_Ordered_EBV_total, 
+    lab = rownames(res_Ordered_EBV_total), 
+    x = 'log2FoldChange', 
+    y = 'padj', 
+    title = 'EBV positive versus EBV negative',
+    pCutoff = 0.05,
+    FCcutoff = 0,
+    pointSize = 3.0,
+    labSize = 4.0, 
+    col=c('grey69', 'grey69', 'grey69', 'red3'),
+    colAlpha = 0.7,
+    cutoffLineType = 'dashed',
+    cutoffLineCol = 'black',
+    cutoffLineWidth = 0.8,
+    hline = c(0.01, 0.001),
+    hlineCol = c('black', 'black'),
+    hlineType = c('dashed', 'dashed'),
+    hlineWidth = c(0.8, 0.8),
+    gridlines.major = FALSE,
+    gridlines.minor = FALSE, 
+    selectLab = label, 
+    drawConnectors = TRUE,
+    widthConnectors = 0.75) + 
+    ggplot2::coord_cartesian(ylim=c(0, 6)) +
+    ggplot2::scale_y_continuous(breaks=seq(0, 6, 1)) +
+    ggplot2::coord_cartesian(xlim=c(-24, 24)) +
+    ggplot2::scale_x_continuous(breaks=seq(-24, 24, 4))
+ggsave("EBV_totalRNA_volcano.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 200, 
+       height = 200, 
+       units = "mm")
+
+# heatmap of DE genes
+sig_genes <- res_Ordered_EBV_total %>% dplyr::filter(padj < 0.05)
+sig_genes <- sig_genes$GeneID
+total_rna_reformat_sub <- total_rna_reformat %>% 
+  dplyr::filter(rownames(total_rna_reformat) %in% sig_genes) %>% 
+  relocate(HL_38, .after = HL_17) %>% 
+  relocate(HL_39, .after = HL_38)
+total_rna_reformat_sub <- total_rna_reformat_sub[order(match(rownames(total_rna_reformat_sub), sig_genes)), ]
+total_rna_reformat_sub <- log10(total_rna_reformat_sub + 1)
+total_rna_reformat_sub <- apply(total_rna_reformat_sub, 1, zscore)
+total_rna_reformat_sub <- data.frame(t(total_rna_reformat_sub)) 
+annot_col <- samples_total_rna %>% 
+  dplyr::select(c("EBV_final", "Diagnosis_abbrev", "Treatment", "Sex", "Clinical_Stage_Group", "Age_Diagnosis_Group"))
+my_breaks <- seq(-2,2, by=0.1)
+my_color <- colorpanel(n = length(my_breaks) - 1, low = "blue", mid = "grey88", high = "red")
+x <- pheatmap(total_rna_reformat_sub, legend = T, color = my_color, breaks = my_breaks, show_colnames = T, show_rownames = T, 
+         cluster_rows = F, cluster_cols = F, annotation_col = annot_col, annotation_colors = annot_colors, annotation_legend = T, 
+         angle_col = 90, border_color = "white")
+x <- pheatmap(total_rna_reformat_sub, legend = T, show_colnames = T, show_rownames = T, 
+         cluster_rows = F, cluster_cols = F, annotation_col = annot_col, annotation_colors = annot_colors, annotation_legend = T, 
+         angle_col = 90, border_color = "white")
+#ggsave("totalRNA_heatmap.pdf", 
+#       plot = x, 
+#       path = "/Users/pourmalm/Desktop", 
+#       device = "pdf", 
+#       width = 600, 
+#       height = 600, 
+#       units = "mm")
+
+# GSEA, export
+#write.table(file = "/Users/pourmalm/Desktop/input_gsea_genes_total_rna.txt", x = res_Ordered_EBV_total %>% 
+#              dplyr::select(all_of(c("GeneID", "log2FoldChange"))) %>% 
+#              dplyr::arrange(log2FoldChange), quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
+# plot GSEA results
+gsea_totalRNA_reformat <- gsea_totalRNA %>% 
+  dplyr::filter(LEADING_EDGE_tags > 0.28) %>% 
+  dplyr::arrange(NES) %>% 
+  mutate(order = rownames(.))
+my_breaks <- seq(0, 1, by = 0.1)
+my_color <- colorpanel(n = length(my_breaks) - 1, low = "blue", mid = "grey88", high = "red")
+x <- ggplot(gsea_totalRNA_reformat, aes(x = NES, y = factor(NAME, levels = NAME))) + 
+  geom_point(aes(size = LEADING_EDGE_tags, color = FDR_qval)) + 
+  scale_size_continuous(range = c(8, 20), breaks = c(0.3, 0.4, 0.5, 0.6, 0.7, 0.8)) + 
+  scale_x_continuous(limits = c(-4, 4), breaks = c(-3, -2, -1, 0, 1, 2, 3)) + 
+  scale_color_gradientn(colors = c("red", "#dddddd", "#cccccc", "#bbbbbb", "#a3a3a3"), 
+                        breaks = c(0, 0.05, 0.25, 0.5, 0.75, 1), 
+                        values = c(0, 0.05, 0.25, 0.5, 0.75, 1), guide = guide_colorbar(reverse = TRUE), limits = c(0, 1)) + 
+  theme_classic()
+ggsave("totalRNA_gsea.pdf", 
+       plot = x, 
+       path = "/Users/pourmalm/Desktop/", 
+       device = "pdf", 
+       width = 700, 
+       height = 700, 
+       units = "mm")
+
+print("done!")
 ```
 
 ```{r}
 
-##protein (IHC - tumor cells): protein (cell dive - tumor cells) correlation
+### flow cytometry analysis
 
-# list of overlapping IHC/cell dive proteins
-celldive_protein_list <- c("B2M.PCT", "MHCI.PCT", "MHCII.PCT", "PDL1.PCT")
-celldive <- pTumor[, celldive_protein_list]
-ihc_protein_list <- c("B2M_IHC_abbrev", "MHCI_IHC_abbrev", "MHCII_IHC_abbrev", "PDL1_IHC_abbrev")
-ihc <- samples[, ihc_protein_list]
-ihc <- ihc[1:44, ]
-# drop 3 samples in IHC that have 0 tumor cells in celldive (this will eventually be corrected)
-ihc <- subset(ihc, rownames(ihc) %in% rownames(celldive))
-identical(rownames(celldive), rownames(ihc))
-bind <- data.frame(cbind(celldive, ihc))
-bind$Sample_ID <- rownames(bind)
-# create barplots
-plts2 <- list()
-for (i in 1:length(celldive_protein_list)){
-  bind <- bind %>% arrange(factor(bind[, i+length(celldive_protein_list)], 
-                                  levels = c("pos", "cytoplasmic", "neg", "unknown")), desc(bind[, i]))
-  bind$Sample_ID <- factor(bind$Sample_ID, levels = bind$Sample_ID)
-  p <- ggplot(data=bind, aes(x = Sample_ID, y = bind[, i], fill = bind[, i+length(celldive_protein_list)])) + 
-    geom_bar(stat="identity") + 
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
-    labs(fill = paste(str_remove(ihc_protein_list[i], "_abbrev"))) + 
-    ylab("% tumor cells positive (cell dive)")
-  print(p)
-  ggsave(paste(str_remove(ihc_protein_list[i], "_abbrev"), "_celldive_correl", ".pdf", sep=""), p, 
-         path = "/Users/pourmalm/Desktop", device = "pdf")
-  plts2[[i]] <- p
-}
+# subset samples meta, add Patient_ID
+samples_flow <- samples %>% 
+  dplyr::filter(Protein_Flow_Cytometry == 1)
+flow_reformat <- flow %>% 
+  base::merge(samples_flow %>% dplyr::select(Patient_ID, Flow_ID), by = "Flow_ID") %>% 
+  relocate(Patient_ID, .before = a_Viable) %>% 
+  arrange(Patient_ID) %>% 
+  column_to_rownames("Patient_ID") %>% 
+  dplyr::select(!Flow_ID)
+# compute fractions
+flow_reformat <- flow_reformat %>% 
+  mutate(a_frac_T_Viable = a_Tcell / a_Viable) %>% 
+  mutate(a_frac_TIM3_T = a_TIM3 / a_Tcell) %>% 
+  mutate(a_frac_CTLA4_T = a_CTLA4 / a_Tcell) %>% 
+  mutate(a_frac_LAG3_T = a_LAG3 / a_Tcell) %>% 
+  mutate(a_frac_CD4_T = a_CD4 / a_Tcell) %>% 
+  mutate(a_frac_CD4TIM3_CD4 = a_CD4_TIM3 / a_CD4) %>% 
+  mutate(a_frac_CD4LAG3TIM3_CD4 = a_CD4_LAG3_TIM3 / a_CD4) %>% 
+  mutate(a_frac_CD4CTLA4LAG3TIM3_CD4 = a_CD4_CTLA4_LAG3_TIM3 / a_CD4) %>% 
+  mutate(a_frac_CD4CTLA4TIM3_CD4 = a_CD4_CTLA4_TIM3 / a_CD4) %>% 
+  mutate(a_frac_CD4LAG3_CD4 = a_CD4_LAG3 / a_CD4) %>% 
+  mutate(a_frac_CD4CTLA4LAG3_CD4 = a_CD4_CTLA4_LAG3 / a_CD4) %>% 
+  mutate(a_frac_CD4CTLA4_CD4 = a_CD4_CTLA4 / a_CD4) %>% 
+  mutate(a_frac_CD8_T = a_CD8 / a_Tcell) %>% 
+  mutate(a_frac_CD8CTLA4_CD8 = a_CD8_CTLA4 / a_CD8) %>% 
+  mutate(a_frac_CD8TIM3_CD8 = a_CD8_TIM3 / a_CD8) %>% 
+  mutate(a_frac_CD8LAG3_CD8 = a_CD8_LAG3 / a_CD8) %>% 
+  mutate(a_frac_CD8LAG3TIM3_CD8 = a_CD8_LAG3_TIM3 / a_CD8) %>% 
+  mutate(a_frac_NK_Viable = a_NK / a_Viable) %>% 
+  mutate(b_frac_T_Viable = b_Tcell / b_Viable) %>% 
+  mutate(b_frac_CD4_T = b_CD4 / b_Tcell) %>% 
+  mutate(b_frac_Treg_T = b_Treg / b_Tcell) %>% 
+  mutate(b_frac_Tregmem_T = b_Treg_mem / b_Tcell) %>% 
+  mutate(b_frac_Tregmemactivated_T = b_Treg_mem_activated / b_Tcell) %>% 
+  mutate(c_frac_T_Viable = c_Tcell / c_Viable) %>% 
+  mutate(c_frac_DR_T = c_DR / c_Tcell) %>% 
+  mutate(c_frac_PD1bright_T = c_PD1_bright / c_Tcell) %>% 
+  mutate(c_frac_CD4_T = c_CD4 / c_Tcell) %>% 
+  mutate(c_frac_Th17_CD4 = c_Th17 / c_CD4) %>% 
+  mutate(c_frac_Th17PD1bright_CD4 = c_Th17_PD1_bright / c_CD4) %>% 
+  mutate(c_frac_Th1_CD4 = c_Th1 / c_CD4) %>% 
+  mutate(c_frac_Th1PD1bright_CD4 = c_Th1_PD1_bright / c_CD4) %>% 
+  mutate(c_frac_Th1DRPD1_CD4 = c_Th1_DR_PD1 / c_CD4) %>% 
+  mutate(c_frac_Th2_CD4 = c_Th2 / c_CD4) %>% 
+  mutate(c_frac_Th2PD1bright_CD4 = c_Th2_PD1_bright / c_CD4) %>% 
+  mutate(c_frac_Th2DRPD1_CD4 = c_Th2_DR_PD1 / c_CD4) %>% 
+  mutate(c_frac_CD8_T = c_CD8 / c_Tcell) %>% 
+  mutate(c_frac_PD1_CD8 = c_PD1 / c_CD8) %>% 
+  mutate(c_frac_CD8DRPD1_CD8 = c_CD8_DR_PD1 / c_CD8)
+flow_celltype_order <- c("a_frac_T_Viable", "a_frac_TIM3_T", "a_frac_CTLA4_T", "a_frac_LAG3_T", "a_frac_CD4_T", "a_frac_CD4TIM3_CD4", 
+                       "a_frac_CD4LAG3TIM3_CD4", "a_frac_CD4CTLA4LAG3TIM3_CD4", "a_frac_CD4CTLA4TIM3_CD4", "a_frac_CD4LAG3_CD4", 
+                       "a_frac_CD4CTLA4LAG3_CD4", "a_frac_CD4CTLA4_CD4", "a_frac_CD8_T", "a_frac_CD8CTLA4_CD8", "a_frac_CD8TIM3_CD8", 
+                       "a_frac_CD8LAG3_CD8", "a_frac_CD8LAG3TIM3_CD8", "a_frac_NK_Viable", "b_frac_T_Viable", "b_frac_CD4_T", "b_frac_Treg_T", 
+                       "b_frac_Tregmem_T", "b_frac_Tregmemactivated_T", "c_frac_T_Viable", "c_frac_DR_T", "c_frac_PD1bright_T", 
+                       "c_frac_CD4_T", "c_frac_Th17_CD4", "c_frac_Th17PD1bright_CD4", "c_frac_Th1_CD4", "c_frac_Th1PD1bright_CD4", 
+                       "c_frac_Th1DRPD1_CD4", "c_frac_Th2_CD4", "c_frac_Th2PD1bright_CD4", "c_frac_Th2DRPD1_CD4", "c_frac_CD8_T", 
+                       "c_frac_PD1_CD8", "c_frac_CD8DRPD1_CD8")
+p <- flow_reformat %>% 
+  dplyr::select(all_of(flow_celltype_order)) %>% 
+  rownames_to_column(var = "Patient_ID") %>% 
+  base::merge(samples_flow %>% dplyr::select(Patient_ID, EBV_final), by = "Patient_ID") %>% 
+  pivot_longer(!c(Patient_ID, EBV_final), names_to = "celltype", values_to = "fraction") %>% 
+  ggplot(aes(x = factor(celltype, levels = flow_celltype_order), y = fraction, fill = factor(EBV_final, levels = c("Positive", "Negative")))) +
+  geom_boxplot(outlier.shape = NA) + 
+  geom_point(position = position_jitterdodge(0.1), size = 0.1) + 
+  scale_fill_manual(values = c("Positive"="#B85042", "Negative"="#A7BEAE")) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) + 
+  labs(fill = "EBV status") + 
+  xlab("Cell states (flow cytometry)") + 
+  ylab("Fraction (%)") + 
+  stat_compare_means(aes(group = EBV_final), method = "wilcox.test", label = "p.format", size = 1)
+ggsave("flow_by_EBV.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 240, 
+       height = 160, 
+       units = "mm")
+
+print("done!!")
 ```
+
+```{r}
+
+### protein (IHC)
+
+samples_ihc <- samples %>% 
+  dplyr::filter(!Protein_IHC == 0)
+ihc_stats <- data.frame(matrix(ncol = 4, nrow = 36))
+colnames(ihc_stats) <- c("marker", "EBV_final", "positivity", "len")
+ihc_stats$marker <- c(rep("PDL1_IHC", 6), rep("PDL2_IHC", 6), rep("B2M_IHC", 6), rep("MHCI_IHC", 6), rep("MHCII_IHC", 6), 
+                      rep("CT2A_IHC", 6))
+ihc_stats$EBV_final <- c(rep("Positive", 3), rep("Negative", 3), rep("Positive", 3), rep("Negative", 3), rep("Positive", 3), 
+                         rep("Negative", 3), rep("Positive", 3), rep("Negative", 3), rep("Positive", 3), rep("Negative", 3), 
+                         rep("Positive", 3), rep("Negative", 3))
+ihc_stats$positivity <- rep(c("pos", "neg", "cyto"), 12)
+samples_ihc_ebvpos <- samples_ihc %>% dplyr::filter(EBV_final == "Positive")
+samples_ihc_ebvneg <- samples_ihc %>% dplyr::filter(EBV_final == "Negative")
+table(samples_ihc_ebvpos$PDL1_IHC)
+ihc_stats[1, 4] <- 1
+ihc_stats[2, 4] <- 0
+ihc_stats[3, 4] <- 0
+table(samples_ihc_ebvneg$PDL1_IHC)
+ihc_stats[4, 4] <- table(samples_ihc_ebvneg$PDL1_IHC)[2]/(table(samples_ihc_ebvneg$PDL1_IHC)[1] + table(samples_ihc_ebvneg$PDL1_IHC)[2])
+ihc_stats[5, 4] <- table(samples_ihc_ebvneg$PDL1_IHC)[1]/(table(samples_ihc_ebvneg$PDL1_IHC)[1] + table(samples_ihc_ebvneg$PDL1_IHC)[2])
+ihc_stats[6, 4] <- 0
+table(samples_ihc_ebvpos$PDL2_IHC)
+ihc_stats[7, 4] <- table(samples_ihc_ebvpos$PDL2_IHC)[2]/(table(samples_ihc_ebvpos$PDL2_IHC)[1] + table(samples_ihc_ebvpos$PDL2_IHC)[2])
+ihc_stats[8, 4] <- table(samples_ihc_ebvpos$PDL2_IHC)[1]/(table(samples_ihc_ebvpos$PDL2_IHC)[1] + table(samples_ihc_ebvpos$PDL2_IHC)[2])
+ihc_stats[9, 4] <- 0
+table(samples_ihc_ebvneg$PDL2_IHC)
+ihc_stats[10, 4] <- table(samples_ihc_ebvneg$PDL2_IHC)[2]/(table(samples_ihc_ebvneg$PDL2_IHC)[1] + table(samples_ihc_ebvneg$PDL2_IHC)[2])
+ihc_stats[11, 4] <- table(samples_ihc_ebvneg$PDL2_IHC)[1]/(table(samples_ihc_ebvneg$PDL2_IHC)[1] + table(samples_ihc_ebvneg$PDL2_IHC)[2])
+ihc_stats[12, 4] <- 0
+table(samples_ihc_ebvpos$B2M_IHC)
+ihc_stats[13, 4] <- 1
+ihc_stats[14, 4] <- 0
+ihc_stats[15, 4] <- 0
+table(samples_ihc_ebvneg$B2M_IHC)
+ihc_stats[16, 4] <- table(samples_ihc_ebvneg$B2M_IHC)[3]/(table(samples_ihc_ebvneg$B2M_IHC)[1] + table(samples_ihc_ebvneg$B2M_IHC)[2] + table(samples_ihc_ebvneg$B2M_IHC)[3])
+ihc_stats[17, 4] <- table(samples_ihc_ebvneg$B2M_IHC)[2]/(table(samples_ihc_ebvneg$B2M_IHC)[1] + table(samples_ihc_ebvneg$B2M_IHC)[2] + table(samples_ihc_ebvneg$B2M_IHC)[3])
+ihc_stats[18, 4] <- table(samples_ihc_ebvneg$B2M_IHC)[1]/(table(samples_ihc_ebvneg$B2M_IHC)[1] + table(samples_ihc_ebvneg$B2M_IHC)[2] + table(samples_ihc_ebvneg$B2M_IHC)[3])
+table(samples_ihc_ebvpos$MHCI_IHC)
+ihc_stats[19, 4] <- 1
+ihc_stats[20, 4] <- 0
+ihc_stats[21, 4] <- 0
+table(samples_ihc_ebvneg$MHCI_IHC)
+ihc_stats[22, 4] <- table(samples_ihc_ebvneg$MHCI_IHC)[3]/(table(samples_ihc_ebvneg$MHCI_IHC)[1] + table(samples_ihc_ebvneg$MHCI_IHC)[2] + table(samples_ihc_ebvneg$MHCI_IHC)[3])
+ihc_stats[23, 4] <- table(samples_ihc_ebvneg$MHCI_IHC)[2]/(table(samples_ihc_ebvneg$MHCI_IHC)[1] + table(samples_ihc_ebvneg$MHCI_IHC)[2] + table(samples_ihc_ebvneg$MHCI_IHC)[3])
+ihc_stats[24, 4] <- table(samples_ihc_ebvneg$MHCI_IHC)[1]/(table(samples_ihc_ebvneg$MHCI_IHC)[1] + table(samples_ihc_ebvneg$MHCI_IHC)[2] + table(samples_ihc_ebvneg$MHCI_IHC)[3])
+table(samples_ihc_ebvpos$MHCII_IHC)
+ihc_stats[25, 4] <- table(samples_ihc_ebvpos$MHCII_IHC)[2]/(table(samples_ihc_ebvpos$MHCII_IHC)[1] + table(samples_ihc_ebvpos$MHCII_IHC)[2])
+ihc_stats[26, 4] <- table(samples_ihc_ebvpos$MHCII_IHC)[1]/(table(samples_ihc_ebvpos$MHCII_IHC)[1] + table(samples_ihc_ebvpos$MHCII_IHC)[2])
+ihc_stats[27, 4] <- 0
+table(samples_ihc_ebvneg$MHCII_IHC)
+ihc_stats[28, 4] <- table(samples_ihc_ebvneg$MHCII_IHC)[2]/(table(samples_ihc_ebvneg$MHCII_IHC)[1] + table(samples_ihc_ebvneg$MHCII_IHC)[2])
+ihc_stats[29, 4] <- table(samples_ihc_ebvneg$MHCII_IHC)[1]/(table(samples_ihc_ebvneg$MHCII_IHC)[1] + table(samples_ihc_ebvneg$MHCII_IHC)[2])
+ihc_stats[30, 4] <- 0
+table(samples_ihc_ebvpos$CT2A_IHC)
+ihc_stats[31, 4] <- table(samples_ihc_ebvpos$CT2A_IHC)[2]/(table(samples_ihc_ebvpos$CT2A_IHC)[1] + table(samples_ihc_ebvpos$CT2A_IHC)[2])
+ihc_stats[32, 4] <- table(samples_ihc_ebvpos$CT2A_IHC)[1]/(table(samples_ihc_ebvpos$CT2A_IHC)[1] + table(samples_ihc_ebvpos$CT2A_IHC)[2])
+ihc_stats[33, 4] <- 0
+table(samples_ihc_ebvneg$CT2A_IHC)
+ihc_stats[34, 4] <- table(samples_ihc_ebvneg$CT2A_IHC)[3]/(table(samples_ihc_ebvneg$CT2A_IHC)[1] + table(samples_ihc_ebvneg$CT2A_IHC)[2] + table(samples_ihc_ebvneg$CT2A_IHC)[3])
+ihc_stats[35, 4] <- table(samples_ihc_ebvneg$CT2A_IHC)[2]/(table(samples_ihc_ebvneg$CT2A_IHC)[1] + table(samples_ihc_ebvneg$CT2A_IHC)[2] + table(samples_ihc_ebvneg$CT2A_IHC)[3])
+ihc_stats[36, 4] <- table(samples_ihc_ebvneg$CT2A_IHC)[1]/(table(samples_ihc_ebvneg$CT2A_IHC)[1] + table(samples_ihc_ebvneg$CT2A_IHC)[2] + table(samples_ihc_ebvneg$CT2A_IHC)[3])
+
+plts_ihc <- list()
+marker_list <- c("PDL1_IHC", "PDL2_IHC", "B2M_IHC", "MHCI_IHC", "MHCII_IHC", "CT2A_IHC")
+for (i in marker_list){
+  p <- ihc_stats %>% dplyr::filter(marker == i) %>% 
+    ggplot(aes(x = factor(EBV_final, levels = c("Positive", "Negative")), y = len, 
+               fill = factor(positivity, levels = c("pos", "cyto", "neg")))) + 
+    geom_bar(stat = "identity") + 
+    scale_fill_discrete(name = "positivity") + 
+    xlab("EBV status") + 
+    ggtitle(i) + 
+    theme_classic()
+    print(p)
+    plts_ihc[[i]] <- p  # add each plot into plot list
+}
+
+ggsave("ihc_results.pdf", 
+       gridExtra::marrangeGrob(grobs = plts_ihc, nrow = 2, ncol = 3),
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 200, 
+       height = 200, 
+       units = "mm")
+
+# fisher test/barplot
+ihc_mat <- data.frame(matrix(ncol = 4, nrow = 12))
+colnames(ihc_mat) <- c("marker", "EBV_final", "pos", "not_pos")
+ihc_mat$marker <- c(rep("PDL1_IHC", 2), rep("PDL2_IHC", 2), rep("B2M_IHC", 2), rep("MHCI_IHC", 2), rep("MHCII_IHC", 2), 
+                      rep("CT2A_IHC", 2))
+ihc_mat$EBV_final <- rep(c("Positive", "Negative"), 6)
+ihc_mat$pos[1] <- table(samples_ihc_ebvpos$PDL1_IHC)
+ihc_mat$not_pos[1] <- 0
+ihc_mat$pos[2] <- table(samples_ihc_ebvneg$PDL1_IHC)[2]
+ihc_mat$not_pos[2] <- table(samples_ihc_ebvneg$PDL1_IHC)[1]
+
+ihc_mat$pos[3] <- table(samples_ihc_ebvpos$PDL2_IHC)[2]
+ihc_mat$not_pos[3] <- table(samples_ihc_ebvpos$PDL2_IHC)[1]
+ihc_mat$pos[4] <- table(samples_ihc_ebvneg$PDL2_IHC)[2]
+ihc_mat$not_pos[4] <- table(samples_ihc_ebvneg$PDL2_IHC)[1]
+
+ihc_mat$pos[5] <- table(samples_ihc_ebvpos$B2M_IHC)[1]
+ihc_mat$not_pos[5] <- 0
+ihc_mat$pos[6] <- table(samples_ihc_ebvneg$B2M_IHC)[3]
+ihc_mat$not_pos[6] <- table(samples_ihc_ebvneg$B2M_IHC)[1] + table(samples_ihc_ebvneg$B2M_IHC)[2]
+
+ihc_mat$pos[7] <- table(samples_ihc_ebvpos$MHCI_IHC)[2]
+ihc_mat$not_pos[7] <- 0
+ihc_mat$pos[8] <- table(samples_ihc_ebvneg$MHCI_IHC)[3]
+ihc_mat$not_pos[8] <- table(samples_ihc_ebvneg$MHCI_IHC)[1] + table(samples_ihc_ebvneg$MHCI_IHC)[2]
+
+ihc_mat$pos[9] <- table(samples_ihc_ebvpos$MHCII_IHC)[2]
+ihc_mat$not_pos[9] <- table(samples_ihc_ebvpos$MHCII_IHC)[1]
+ihc_mat$pos[10] <- table(samples_ihc_ebvneg$MHCII_IHC)[2]
+ihc_mat$not_pos[10] <- table(samples_ihc_ebvneg$MHCII_IHC)[1]
+
+ihc_mat$pos[11] <- table(samples_ihc_ebvpos$CT2A_IHC)[2]
+ihc_mat$not_pos[11] <- table(samples_ihc_ebvpos$CT2A_IHC)[1]
+ihc_mat$pos[12] <- table(samples_ihc_ebvneg$CT2A_IHC)[3]
+ihc_mat$not_pos[12] <- table(samples_ihc_ebvneg$CT2A_IHC)[1] + table(samples_ihc_ebvneg$CT2A_IHC)[2]
+
+plts_ihc_stats <- list()
+marker_list <- c("PDL1_IHC", "PDL2_IHC", "B2M_IHC", "MHCI_IHC", "MHCII_IHC", "CT2A_IHC")
+for (i in marker_list){
+  stats <- fisher.test(ihc_mat %>% dplyr::filter(marker == i) %>% column_to_rownames("EBV_final") %>% dplyr::select(!"marker"), 
+                       y = NULL, workspace = 200000, hybrid = FALSE, hybridPars = c(expect = 5, percent = 80, Emin = 1), control = list(), 
+                       or = 1, alternative = "two.sided", conf.int = TRUE, conf.level = 0.95, simulate.p.value = FALSE, B = 2000)
+  p <- ihc_stats %>% dplyr::filter(positivity == "pos") %>% dplyr::filter(marker == i) %>% 
+    ggplot(aes(x = factor(EBV_final, levels = c("Positive", "Negative")), y = len, fill = EBV_final)) + 
+    geom_bar(stat="identity") + xlab("EBV status") + ylab(paste(i, "Positive tumors (%)")) + 
+    #scale_y_continuous(breaks=seq(0, 1.1, 0.2), limits=c(0, 1.1)) + 
+    scale_fill_manual(values = c("Positive"="#B85042", "Negative"="#A7BEAE")) + 
+    theme(axis.text.x = element_text(angle = 45)) + 
+    geom_signif(xmin = 1, xmax = 2, y_position = 1.05, annotation = format(stats$p.value, digits = 3),tip_length = 0.02) + 
+    theme_classic()
+    print(p)
+    plts_ihc_stats[[i]] <- p
+}
+
+ggsave("ihc_stats.pdf", 
+       gridExtra::marrangeGrob(grobs = plts_ihc_stats, nrow = 2, ncol = 3),
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 200, 
+       height = 200, 
+       units = "mm")
+
+print("IHC stats done!")
+```
+
+```{r}
+
+### mpIF HRS aggregates/NanoString DE
+
+# aggregates by patient
+samples_mpif <- samples %>% filter(Protein_Multiplexed_IF == 1) %>% arrange(desc(EBV_final))
+hrsagg <- hrsagg %>% arrange(Patient_ID) %>% 
+  arrange(desc(EBV_final))
+patient_order <- c("HL_15", "HL_18", "HL_19", "HL_21", "HL_23", "HL_01", "HL_02","HL_03", "HL_06", "HL_07", "HL_10", "HL_11", "HL_13", "HL_14", 
+                   "HL_16", "HL_17", "HL_20", "HL_24", "HL_26", "HL_05", "HL_25", "HL_29", "HL_30", "HL_12", "HL_28","HL_04", "HL_27", "HL_08", "HL_09", "HL_22")
+x <- ggplot(hrsagg %>% dplyr::mutate(value = 1), aes(x = factor(Patient_ID, levels = patient_order), y = value, fill = HRSStatus)) +
+  geom_bar(position="stack", stat="identity") + 
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  xlab("Patient") + 
+  ylab("No. FOVs")
+y <- ggplot(hrsagg %>% dplyr::mutate(value = 1), aes(x = factor(Patient_ID, levels = patient_order), y = value, fill = HRSStatus)) + 
+  geom_bar(position="fill", stat="identity") + 
+  scale_fill_manual(values = c("Clustered"="#ff8100", "Dispersed"="#0092ff")) + 
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  xlab("Patient") + 
+  ylab("% FOVs")
+ggsave("hrsagg_fov_summary.pdf",
+       path = "/Users/pourmalm/Desktop", 
+       plot = y, 
+       device = "pdf", 
+       width = 200, 
+       height = 160, 
+       units = "mm")
+# total aggregates EBV+/-
+p <- hrsagg %>% ggplot(aes(x = factor(EBV_final, levels = c("Positive", "Negative")), y = NAgg)) +
+  geom_bar(stat="identity") + 
+  xlab("Pos6_Neg1064_noAggs") + 
+  ylab("No. HRS aggregates") + 
+  theme_classic()
+ggsave("HRSagg_totalcount.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 100, 
+       height = 100, 
+       units = "mm")
+# total aggregates PER FOV EBV+/-
+p <- hrsagg %>% ggplot(aes(x = factor(EBV_final, levels = c("Positive", "Negative")), y = NAgg, color = EBV_final)) +
+  geom_boxplot() + 
+  geom_jitter(shape=16, position=position_jitter(0.2)) + 
+  scale_color_manual(values=c("#A7BEAE", "#B85042")) + 
+  ylab("No. HRS aggregates per FOV") + 
+  theme_classic()
+ggsave("HRSagg_aggregates_per_FOV.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 100, 
+       height = 100, 
+       units = "mm")
+# fraction of HRS cells in an aggregate per FOV (FIGURE 5B)
+p <- hrsagg %>% ggplot(aes(x = factor(EBV_final, levels = c("Positive", "Negative")), y = PCT.HRS.Agg, color = EBV_final)) + 
+  geom_boxplot(outlier.shape = NA) + 
+  geom_jitter(shape=16, position=position_jitter(0.2)) + 
+  scale_color_manual(values=c("#A7BEAE", "#B85042")) + 
+  theme_classic() + 
+  #geom_hline(yintercept = 0.25, linetype = "dashed", color = "black") + 
+  stat_compare_means()
+wilcox.test(PCT.HRS.Agg ~ EBV_final, data = hrsagg %>% dplyr::select(c("EBV_final", "PCT.HRS.Agg")),
+                   exact = FALSE)
+ggsave("HRSagg_percentaggregatescells.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 100, 
+       height = 100, 
+       units = "mm")
+# total number of clustered FOVs by EBV
+p <- hrsagg %>% mutate(clustered_yes = case_when(HRSStatus == "Clustered" ~ 1, 
+                             HRSStatus == "Dispersed" ~ 0)) %>% 
+  ggplot(aes(x = factor(EBV_final, levels = c("Positive", "Negative")), y = clustered_yes)) +
+  geom_bar(stat="identity") + 
+  ylab("No. clustered FOVs") + 
+  theme_classic()
+ggsave("HRSagg_num_aggregatesFOVs.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 100, 
+       height = 100, 
+       units = "mm")
+# percent of clustered FOVs by EBV
+p <- data.frame(matrix(0, ncol=2, nrow=2)) %>% 
+  rename("EBV_final" = "X1") %>% 
+  rename("fraction_FOVs_clustered" = "X2") %>% 
+  mutate(EBV_final = c("Positive", "Negative")) %>% 
+  mutate(fraction_FOVs_clustered = c(nrow(hrsagg %>% dplyr::filter(EBV_final == "Positive", HRSStatus == "Clustered")) / nrow(hrsagg %>% dplyr::filter(EBV_final == "Positive")), 
+                                     nrow(hrsagg %>% dplyr::filter(EBV_final == "Negative", HRSStatus == "Clustered")) / nrow(hrsagg %>% dplyr::filter(EBV_final == "Negative")))) %>% 
+  ggplot(aes(x = factor(EBV_final, levels = c("Positive", "Negative")), y = fraction_FOVs_clustered)) +
+  geom_bar(stat="identity", fill=c("#B85042", "#A7BEAE")) + 
+  theme_classic() + 
+  scale_y_continuous(limits = c(0,1))
+ggsave("HRSagg_fraction_clusteredFOVs.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 100, 
+       height = 100, 
+       units = "mm")
+# number of cells per aggregate EBV+/- (cutoff at 20 cells)
+p <- hrsagg_detail %>% dplyr::filter(ClusterSize >= 20) %>% 
+  ggplot(aes(x = factor(EBV_final, levels = c("Positive", "Negative")), y = ClusterSize, color = EBV_final)) + 
+  geom_boxplot() + 
+  geom_jitter(shape=16, position=position_jitter(0.2)) + 
+  scale_color_manual(values=c("#A7BEAE", "#B85042")) + 
+  theme_classic() + 
+  scale_y_continuous(trans='log10') + 
+  geom_hline(yintercept = 20, linetype = "dashed", color = "black") + 
+  xlab("No_HRS_cells_per_aggregate")
+ggsave("HRSagg_cellsperaggregate.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 100, 
+       height = 100, 
+       units = "mm")
+
+# assign patients to clustered versus not if >25% of FOVs are clustered
+hrsagg_sum <- hrsagg %>% 
+  mutate(HRSStatus_sum = case_when((HRSStatus == "Clustered") ~ 1, (HRSStatus == "Dispersed") ~ 0)) %>% 
+  mutate(pseudo_fov_count = 1) %>% 
+  group_by(Patient_ID) %>% 
+  summarise(sum(HRSStatus_sum), sum(pseudo_fov_count)) %>% 
+  dplyr::rename("No_Clustered_FOVs" = "sum(HRSStatus_sum)", "No_FOVs" = "sum(pseudo_fov_count)") %>% 
+  mutate(Frac_Clustered_FOVs = No_Clustered_FOVs / No_FOVs)  %>% 
+  base::merge(samples_mpif %>% dplyr::select(Patient_ID, EBV_final), by = "Patient_ID") %>% 
+  dplyr::filter(!EBV_final == "Positive") %>% 
+  mutate(SampleClustering = case_when((Frac_Clustered_FOVs >= 0.4) ~ "clustered", (Frac_Clustered_FOVs == 0) ~ "dispersed")) %>% 
+  dplyr::filter(!is.na(SampleClustering))
+
+keep <- intersect(colnames(reformat_rawcounts), hrsagg_sum$Patient_ID)
+hrsagg_sum <- hrsagg_sum %>% 
+  filter(Patient_ID %in% keep) %>% 
+  column_to_rownames("Patient_ID")
+reformat_rawcounts_hrsagg <- reformat_rawcounts %>% 
+  dplyr::select(keep)
+reformat_normcounts_hrsagg <- reformat_normcounts %>% 
+  dplyr::select(keep)
+identical(colnames(reformat_rawcounts_hrsagg), rownames(hrsagg_sum))
+
+# compute % HRS cells in aggregate at patient level
+hrsagg_sum2 <- hrsagg %>% 
+  group_by(Patient_ID) %>% 
+  summarise(total_N_Cell_Agg = sum(N.Cell.Agg), total_HRS_cells = sum(HRS)) %>% 
+  mutate(percent_HRS_cells_in_aggregate = total_N_Cell_Agg/total_HRS_cells) %>% 
+  merge(samples_mpif %>% dplyr::select(Patient_ID, EBV_final), by = "Patient_ID") %>% 
+  filter(!EBV_final == "Positive") %>% 
+  arrange(percent_HRS_cells_in_aggregate) %>% 
+  mutate(label = case_when((percent_HRS_cells_in_aggregate >= 0.3) ~ "aggregated", (percent_HRS_cells_in_aggregate == 0) ~ "not_aggregated")) %>% 
+  mutate(label_stringent = case_when((percent_HRS_cells_in_aggregate >= 0.5) ~ "aggregated", (percent_HRS_cells_in_aggregate == 0) ~ "not_aggregated"))
+p <- ggplot(data = hrsagg_sum2, aes(x = factor(Patient_ID, levels = Patient_ID), y = percent_HRS_cells_in_aggregate)) + 
+  geom_bar(stat="identity")
+
+# differential expression by 'SampleClustering'
+dds_hrsagg <- DESeqDataSetFromMatrix(countData=reformat_rawcounts_hrsagg, colData=hrsagg_sum, design=~SampleClustering)
+dds_hrsagg$SampleClustering <- relevel(dds_hrsagg$SampleClustering, "dispersed")
+dds_hrsagg <- DESeq(dds_hrsagg)
+res_hrsagg <- results(dds_hrsagg, contrast = c("SampleClustering", "clustered", "dispersed"))
+res_Ordered_hrsagg <- res_hrsagg[order(res_hrsagg$padj),]
+res_Ordered_hrsagg <- data.frame(GeneID = rownames(res_Ordered_hrsagg), res_Ordered_hrsagg)
+
+p <- EnhancedVolcano(res_hrsagg, 
+    lab = rownames(res_hrsagg), 
+    x = 'log2FoldChange', 
+    y = 'padj', 
+    title = 'HRS clustered versus HRS dispersed (min 40% FOVs, n=12)',
+    pCutoff = 0.05,
+    FCcutoff = 0,
+    pointSize = 3.0,
+    labSize = 4.0, 
+    col=c('grey69', 'grey69', 'grey69', 'red3'),
+    colAlpha = 0.7,
+    cutoffLineType = 'dashed',
+    cutoffLineCol = 'black',
+    cutoffLineWidth = 0.8,
+    hline = c(0.01, 0.001),
+    hlineCol = c('black', 'black'),
+    hlineType = c('dashed', 'dashed'),
+    hlineWidth = c(0.8, 0.8),
+    gridlines.major = FALSE,
+    gridlines.minor = FALSE, 
+    drawConnectors = TRUE,
+    widthConnectors = 0.75) +
+    ggplot2::coord_cartesian(ylim=c(0, 13)) +
+    ggplot2::scale_y_continuous(breaks=seq(0, 13, 3)) +
+    ggplot2::coord_cartesian(xlim=c(-8, 8)) +
+    ggplot2::scale_x_continuous(breaks=seq(-8, 8, 2))
+ggsave("HRSagg_volcano_40percent.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 250, 
+       height = 250, 
+       units = "mm")
+```
+
+```{r}
+
+### HRS functional marker expression (mpIF)
+
+hrs_func_marker_reformat <- hrs_func_marker %>% 
+  rename("CellDive_ID" = "Sample") %>% 
+  merge(samples_mpif %>% dplyr::select(c("Patient_ID", "CellDive_ID", "EBV_final")), by = "CellDive_ID")
+marker_order <- unlist(hrs_func_marker_reformat %>% group_by(Marker) %>% summarize(median(fraction)) %>% 
+  ungroup() %>% rename("median_fraction" = "median(fraction)") %>% arrange(desc(median_fraction)) %>% dplyr::select(Marker))
+p <- ggplot(hrs_func_marker_reformat, aes(x = factor(Marker, levels = marker_order), y = fraction)) + 
+  geom_boxplot() + 
+  geom_jitter(shape = 16, size = 0.5, position=position_jitter(0.2)) + 
+  theme_classic() + 
+  geom_hline(yintercept = 0.25, linetype = "dashed") + 
+  xlab("Functional marker") + 
+  ylab("Fraction HRS cells positive")
+ggsave("fractionFuncMarkerHRS.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 200, 
+       height = 80, 
+       units = "mm")
+
+```
+
+```{r}
+
+### COV plots
+
+#heatmap
+hrscov_reformat <- hrscov %>% pivot_wider(names_from = Patient_ID_FINAL, values_from = COV) 
+hrscov_reformat <- hrscov_reformat[order(match(hrscov_reformat$Population, hrscov_order$Population)), ] %>% 
+  column_to_rownames("Population")
+my_breaks <- seq(0, 3, by = 0.1)
+my_color <- colorpanel(n = length(my_breaks) - 1, low = "#d0efff", mid = "#187bcd", high = "#03254c")
+p <- pheatmap(hrscov_reformat, cluster_rows = F, cluster_cols = F, color = my_color, breaks = my_breaks)
+ggsave("cov_heatmap.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 200, 
+       height = 200, 
+       units = "mm")
+#bar plot, find max value omitting HL_17 (only 1 FOV)
+maxcov <- hrscov %>% group_by(Population) %>% summarise(max = max(COV, na.rm=TRUE))
+maxcov <- maxcov[order(match(maxcov$Population, hrscov_order$Population)), ] %>% 
+  as.data.frame()
+p <- ggplot(data = maxcov, aes(x = factor(Population, levels = Population), y = max)) +
+  geom_bar(stat="identity") + coord_flip() + theme_classic() + ylim(0, 3)
+ggsave("maxcov.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 200, 
+       height = 200, 
+       units = "mm")
+# fig S6B
+p <- maxcov %>% arrange(max) %>% 
+  ggplot(aes(x = factor(Population, levels = Population), y = max)) +
+  geom_bar(stat="identity") + coord_flip() + theme_classic() + ylim(0, 3)
+ggsave("maxcov_orderedbycov.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 200, 
+       height = 200, 
+       units = "mm")
+
+```
+
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
 
 When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
 
 The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
-
-
-_____
-
-library(openxlsx)
-library(ggplot2)
-
-tumor_counts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/Hodgkin_celldive/211122_tumor_functional_marker_counts_per_sample.xlsx"
-tumor_counts_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/Hodgkin_celldive/test.xlsx"
-
-tumor_counts <- read.xlsx(tumor_counts_path, colNames = TRUE, rowNames = FALSE)
-
-#violin plot of tumor functional markers
-ggplot(test, aes(x=marker, y=PCT, fill=CellDive_ID)) + geom_dotplot(binaxis='y', stackdir='center',
-                                                          position=position_dodge(1),dotsize=0.5)
-
-ggplot(test, y=PCT)) + geom_violin() + geom_dotplot(binaxis='y', stackdir='center', dotsize=0.3)
-
-______
-
-
-
-################################### other hodgkin code ###################################
-
-#celltype_barplot.R code
-library(ggplot2)
-library(dplyr)
-
-count_path <- "/Users/pourmalm/Desktop/counts.txt"
-count <- read.table(count_path, sep = "\t", header = TRUE, row.names = NULL, stringsAsFactors = F)
-
-order <- c("T_CD4", "T_CD8", "T_Reg4", "T_Reg8", "T_RegDN", "T_CD4/CD8", "T_Null", "B_All", "NK", "NKT", 
-           "NKT_CD8", "NKT_CD4", "Macrophage_MHCIIpos", "Macrophage_MHCIIneg", "Macrophage_Other", 
-           "Plasma", "Granulocyte", "Leukocyte_Other")
-colors <- c("palegreen", "steelblue1", "palegreen4", "steelblue4", "khaki", "khaki", "khaki4", "yellow1", 
-            "orchid", "orchid2", "orchid3", "orchid4", "firebrick", "firebrick3", "firebrick4", "bisque", "bisque4",
-            "gray69")
-
-# summarize overall counts
-overall <- count
-overall$CellType <- NULL
-overall$SubType <- NULL
-overall$Total <- NULL
-overall <- overall %>% group_by(Overall) %>% summarise_each(funs(sum))
-overall <- melt(overall)
-
-pdf("overall_count.pdf", 20, 10)
-ggplot(overall, aes(fill=factor(Overall, level=c("Tumor", "Immune", "Other")), y=value, x=variable)) + 
-  geom_bar(position="stack", stat="identity") + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text=element_text(size=18),
-        axis.title=element_text(size=20,face="bold"), legend.text=element_text(size=14)) +
-  scale_fill_manual(values = c("red", "palegreen3", "grey")) + labs(fill = "Cell Type") + xlab("Patient ID") + ylab("Total Count")
-dev.off()
-
-pdf("overall_percent.pdf", 20, 10)
-ggplot(overall, aes(fill=factor(Overall, level=c("Tumor", "Immune", "Other")), y=value, x=variable)) + 
-  geom_bar(position="fill", stat="identity") + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text=element_text(size=18),
-        axis.title=element_text(size=20,face="bold"), legend.text=element_text(size=14)) +
-  scale_fill_manual(values = c("red", "palegreen3", "grey")) + labs(fill = "Cell Type") + xlab("Patient ID") + ylab("Percent")
-dev.off()
-
-sub <- count
-sub$Overall <- NULL
-sub$CellType <- NULL
-sub$Total <- NULL
-sub <- sub %>% group_by(SubType) %>% summarise_each(funs(sum))
-sub <- sub[-c(3,13,21),]
-sub <- melt(sub)
-
-pdf("sub_count.pdf", 20, 10)
-ggplot(sub, aes(fill=factor(SubType, level=order), y=value, x=variable)) + 
-  geom_bar(position="stack", stat="identity") + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text=element_text(size=18),
-        axis.title=element_text(size=20,face="bold"), legend.text=element_text(size=14)) +
-  scale_fill_manual(values = colors) + labs(fill = "Cell Type") + xlab("Patient ID") + ylab("Total Count") + 
-  scale_y_continuous(name="Fluorescent intensity/arbitrary units", labels = scales::comma)
-dev.off()
-
-pdf("sub_percent.pdf", 20, 10)
-ggplot(sub, aes(fill=factor(SubType, level=order), y=value, x=variable)) + 
-  geom_bar(position="fill", stat="identity") + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text=element_text(size=18),
-        axis.title=element_text(size=20,face="bold"), legend.text=element_text(size=14)) +
-  scale_fill_manual(values = colors) + labs(fill = "Cell Type") + xlab("Patient ID") + ylab("Percent")
-dev.off()
-
-
 
