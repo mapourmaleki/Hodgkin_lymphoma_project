@@ -50,8 +50,12 @@ gsea_totalRNA_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_pr
 hrsagg_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/stats_Aggregation_HRS_N2_AggSize__20_CLIN_FINAL.xlsx"
 hrsagg_detail_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/stats_Aggregation_HRS_N2_AggSize__20_aggdata_FINAL.xlsx"
 hrs_func_marker_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/allSamples.csv"
-hrscov_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/intraPatientCoV_PCTHRSStates_v2.1_.xlsx"
-hrscov_order_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/hrsStatesHeatmap06.barplot_v2.1_.csv"
+hrscov_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/intraPatientCoV_PCTHRSStates_v2.2.xlsx"
+hrscov_order_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/hrsStatesHeatmap06.barplot_v2.2.csv"
+HRS_agpres_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/230207_triplePos_B2M,MHCI,MHCII_v1.csv"
+hrs_states_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/Table_S13_HRS cell states_230218.xlsx"
+hrs_states_patient_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/hrs_states_patient.csv"
+hrs_states_ptcov_path <- "/Users/pourmalm/Documents/Mellinghoff_lab/Data/hodgkin_project/mpIF/tables/hrs_states_ptcov.csv"
 rawcounts <- read.csv(rawcounts_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
 normcounts <- read.csv(normcounts_path, header = TRUE, row.names = NULL, stringsAsFactors = FALSE, sep = ",")
 samples <- read.xlsx(samples_path, colNames = TRUE, rowNames = FALSE)
@@ -74,6 +78,10 @@ hrsagg_detail <- read_excel(hrsagg_detail_path)
 hrs_func_marker <- read.csv(hrs_func_marker_path, header = TRUE, stringsAsFactors = FALSE, sep = ",")
 hrscov <- read_excel(hrscov_path, sheet = "CovPerPt")
 hrscov_order <- read.csv(hrscov_order_path, header = TRUE, stringsAsFactors = FALSE, sep = ",")
+HRS_agpres <- read.csv(HRS_agpres_path, header = TRUE, stringsAsFactors = FALSE, sep = ",")
+hrs_states_cohort <- read_excel(hrs_states_path, sheet = "Cohort-level_data")
+hrs_states_patient <- read.csv(hrs_states_patient_path, header = TRUE, stringsAsFactors = FALSE, sep = ",")
+hrs_states_ptcov <- read.csv(hrs_states_ptcov_path, header = TRUE, stringsAsFactors = FALSE, sep = ",")
 
 print("library and files loaded")
 ```
@@ -913,7 +921,7 @@ total_rna_reformat <- total_rna_reformat %>%
 samples_total_rna <- samples %>% 
   filter(!RNA_Total_RNA == 0) %>% 
   filter(Treatment == "Untreated")
-rownames(samples_total_rna) <- samples_total_rna$Patient_ID
+rownames(samples_total_rna) <- samples_total_rna$Patient_ID_old
 # cibersort, compare fractions by EBV
 cibersort_celltype_order <- c("T.cells.CD4.naive", "T.cells.CD4.memory.resting", "T.cells.CD4.memory.activated", "T.cells.follicular.helper", 
                               "T.cells.CD8", "T.cells.regulatory..Tregs.", "T.cells.gamma.delta", "B.cells.naive", "B.cells.memory", 
@@ -1377,7 +1385,8 @@ p <- hrsagg %>% ggplot(aes(x = factor(EBV_final, levels = c("Positive", "Negativ
   geom_jitter(shape=16, position=position_jitter(0.2)) + 
   scale_color_manual(values=c("#A7BEAE", "#B85042")) + 
   ylab("No. HRS aggregates per FOV") + 
-  theme_classic()
+  theme_classic() + 
+  stat_compare_means(method = "wilcox.test", label = "p.format")
 ggsave("HRSagg_aggregates_per_FOV.pdf", 
        plot = p, 
        path = "/Users/pourmalm/Desktop", 
@@ -1443,7 +1452,8 @@ p <- hrsagg_detail %>% dplyr::filter(ClusterSize >= 20) %>%
   theme_classic() + 
   scale_y_continuous(trans='log10') + 
   geom_hline(yintercept = 20, linetype = "dashed", color = "black") + 
-  xlab("No_HRS_cells_per_aggregate")
+  xlab("No_HRS_cells_per_aggregate") + 
+  stat_compare_means(method = "wilcox.test", label = "p.format")
 ggsave("HRSagg_cellsperaggregate.pdf", 
        plot = p, 
        path = "/Users/pourmalm/Desktop", 
@@ -1474,19 +1484,6 @@ reformat_rawcounts_hrsagg <- reformat_rawcounts %>%
 reformat_normcounts_hrsagg <- reformat_normcounts %>% 
   dplyr::select(keep)
 identical(colnames(reformat_rawcounts_hrsagg), rownames(hrsagg_sum))
-
-# compute % HRS cells in aggregate at patient level
-hrsagg_sum2 <- hrsagg %>% 
-  group_by(Patient_ID) %>% 
-  summarise(total_N_Cell_Agg = sum(N.Cell.Agg), total_HRS_cells = sum(HRS)) %>% 
-  mutate(percent_HRS_cells_in_aggregate = total_N_Cell_Agg/total_HRS_cells) %>% 
-  merge(samples_mpif %>% dplyr::select(Patient_ID, EBV_final), by = "Patient_ID") %>% 
-  filter(!EBV_final == "Positive") %>% 
-  arrange(percent_HRS_cells_in_aggregate) %>% 
-  mutate(label = case_when((percent_HRS_cells_in_aggregate >= 0.3) ~ "aggregated", (percent_HRS_cells_in_aggregate == 0) ~ "not_aggregated")) %>% 
-  mutate(label_stringent = case_when((percent_HRS_cells_in_aggregate >= 0.5) ~ "aggregated", (percent_HRS_cells_in_aggregate == 0) ~ "not_aggregated"))
-p <- ggplot(data = hrsagg_sum2, aes(x = factor(Patient_ID, levels = Patient_ID), y = percent_HRS_cells_in_aggregate)) + 
-  geom_bar(stat="identity")
 
 # differential expression by 'SampleClustering'
 dds_hrsagg <- DESeqDataSetFromMatrix(countData=reformat_rawcounts_hrsagg, colData=hrsagg_sum, design=~SampleClustering)
@@ -1529,6 +1526,52 @@ ggsave("HRSagg_volcano_40percent.pdf",
        width = 250, 
        height = 250, 
        units = "mm")
+
+# compute % HRS cells in aggregate at patient level
+hrsagg_sum2 <- hrsagg %>% 
+  group_by(Patient_ID) %>% 
+  summarise(total_N_Cell_Agg = sum(N.Cell.Agg), total_HRS_cells = sum(HRS)) %>% 
+  mutate(percent_HRS_cells_in_aggregate = total_N_Cell_Agg/total_HRS_cells) %>% 
+  merge(samples_mpif %>% dplyr::select(Patient_ID, EBV_final), by = "Patient_ID") %>% 
+  filter(!EBV_final == "Positive") %>% 
+  mutate(label_stringent = case_when((percent_HRS_cells_in_aggregate >= 0.3) ~ "aggregated", (percent_HRS_cells_in_aggregate == 0) ~ "not_aggregated")) %>% 
+  mutate(label = case_when((percent_HRS_cells_in_aggregate > 0.5) ~ "aggregated", (percent_HRS_cells_in_aggregate == 0) ~ "not_aggregated"))
+p <- hrsagg %>% 
+  group_by(Patient_ID) %>% 
+  summarise(total_N_Cell_Agg = sum(N.Cell.Agg), total_HRS_cells = sum(HRS)) %>% 
+  mutate(percent_HRS_cells_in_aggregate = total_N_Cell_Agg/total_HRS_cells) %>% 
+  merge(samples_mpif %>% dplyr::select(Patient_ID, EBV_final), by = "Patient_ID") %>% 
+  arrange(percent_HRS_cells_in_aggregate) %>% 
+  ggplot(aes(x = factor(Patient_ID, levels = Patient_ID), y = percent_HRS_cells_in_aggregate)) + 
+  geom_bar(stat="identity") + 
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  xlab("Patient") + 
+  ylab(" % HRS cells in aggregate")
+
+# only EBV- patients
+temp <- hrsagg_sum2 %>% filter(label %in% c("aggregated", "not_aggregated")) %>% dplyr::select(Patient_ID)
+keep <- intersect(colnames(reformat_rawcounts), temp$Patient_ID)
+hrsagg_sum2 <- hrsagg_sum2 %>% 
+  filter(Patient_ID %in% keep) %>% 
+  column_to_rownames("Patient_ID")
+reformat_rawcounts_hrsagg_label <- reformat_rawcounts %>% 
+  dplyr::select(keep)
+reformat_normcounts_hrsagg_label <- reformat_normcounts %>% 
+  dplyr::select(keep)
+identical(colnames(reformat_rawcounts_hrsagg_label), rownames(hrsagg_sum2))
+
+# differential expression by 'SampleClustering'
+dds_hrsagg_label <- DESeqDataSetFromMatrix(countData=reformat_rawcounts_hrsagg_label, colData=hrsagg_sum2, design=~label)
+dds_hrsagg_label$label <- relevel(dds_hrsagg_label$label, "not_aggregated")
+dds_hrsagg_label <- DESeq(dds_hrsagg_label)
+res_hrsagg_label <- results(dds_hrsagg_label, contrast = c("label", "aggregated", "not_aggregated"))
+res_Ordered_hrsagg_label <- res_hrsagg_label[order(res_hrsagg_label$padj),]
+res_Ordered_hrsagg_label <- data.frame(GeneID = rownames(res_Ordered_hrsagg_label), res_Ordered_hrsagg_label)
+
+rld <- rlog(dds_hrsagg_label)
+plotPCA(rld, intgroup="label")
+
 ```
 
 ```{r}
@@ -1567,7 +1610,7 @@ hrscov_reformat <- hrscov_reformat[order(match(hrscov_reformat$Population, hrsco
   column_to_rownames("Population")
 my_breaks <- seq(0, 3, by = 0.1)
 my_color <- colorpanel(n = length(my_breaks) - 1, low = "#d0efff", mid = "#187bcd", high = "#03254c")
-p <- pheatmap(hrscov_reformat, cluster_rows = F, cluster_cols = F, color = my_color, breaks = my_breaks)
+p <- pheatmap(hrscov_reformat, cluster_rows = F, cluster_cols = F, color = my_color, breaks = my_breaks, border_color = "white")
 ggsave("cov_heatmap.pdf", 
        plot = p, 
        path = "/Users/pourmalm/Desktop", 
@@ -1599,6 +1642,92 @@ ggsave("maxcov_orderedbycov.pdf",
        width = 200, 
        height = 200, 
        units = "mm")
+# fig 4 correlations, cohort-level fraction CoV
+p <- ggscatter(hrs_states_cohort, x = "Fraction", y = "CoV", color = "black", size = 3, # Points color, shape and size
+   add = "reg.line",  # Add regression line
+   add.params = list(color = "blue", fill = "lightgray"), # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = 0.5, label.sep = "\n")
+   )
+ggsave("cohort_cov_fraction_correl.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 200, 
+       height = 200, 
+       units = "mm")
+# patient-level fraction CoV correlation
+hrs_states_patient <- hrs_states_patient %>% pivot_longer(!Cell_state, names_to = "Patient_ID", values_to = "Fraction")
+hrs_states_ptcov <- hrs_states_ptcov %>% pivot_longer(!Cell_state, names_to = "Patient_ID", values_to = "CoV")
+total <- merge(hrs_states_patient, hrs_states_ptcov, by = c("Cell_state", "Patient_ID"))
+p <- total %>% 
+  #mutate(color = case_when((Cell_state == "HRS,B2M") ~ "y"), case_when((Cell_state != "HRS,B2M") ~ "n")) %>% 
+  ggscatter(x = "Fraction", y = "CoV", color = "black", size = 1.5, # Points color, shape and size
+   add = "reg.line",  # Add regression line
+   add.params = list(color = "blue", fill = "lightgray"), # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = 0.5, label.sep = "\n", size = 4)) + 
+  facet_wrap(vars(Patient_ID))
+ggsave("patient_cov_fraction_correl.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 300, 
+       height = 300, 
+       units = "mm")
+# patient level fraction CoV for B2M, MHCI, MHCII, PDL1
+p <- total %>% filter(Cell_state %in% c("HRS,B2M", "HRS,MHCI", "HRS,MHCII", "HRS,PDL1")) %>% 
+  merge(samples_mpif %>% dplyr::select(Patient_ID, EBV_final), by = "Patient_ID") %>% 
+  ggscatter(x = "Fraction", y = "CoV", color = "EBV_final", size = 3, # Points color, shape and size
+   add = "reg.line",  # Add regression line
+   add.params = list(color = "blue", fill = "lightgray"), # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = 0.5, label.sep = "\n", size = 5), 
+   palette = c("#A7BEAE", "#B85042")) + 
+  facet_wrap(vars(Cell_state))
+ggsave("B2M_MHCI_MHCII_PDL2_cov_fraction_correl.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 150, 
+       height = 150, 
+       units = "mm")
+
+```
+
+```{r}
+
+### B2M/MHCI/MHCII combinations in HRS cells
+
+HRS_agpres <- HRS_agpres %>% merge(samples_mpif %>% dplyr::select(Patient_ID, Patient_ID_old, EBV_final), by = "Patient_ID_old")
+HRS_agpres_sum <- HRS_agpres %>% pivot_wider(!c(n, Patient_ID_old), names_from = Triple, values_from = PCT) %>% 
+  mutate(Impaired = rowSums(across(c("B2M-,MHCI-,MHCII-", "B2M+,MHCI-,MHCII-", "B2M-,MHCI+,MHCII-")), na.rm=TRUE)) %>% 
+  mutate(MHCII_only = rowSums(across(c("B2M-,MHCI-,MHCII+", "B2M+,MHCI-,MHCII+", "B2M-,MHCI+,MHCII+")), na.rm=TRUE)) %>% 
+  mutate(MHCI_MHCII = rowSums(across(c("B2M+,MHCI+,MHCII+", "B2M+,MHCI+,MHCII-")), na.rm=TRUE)) %>% 
+  dplyr::select(Patient_ID, EBV_final, Impaired, MHCII_only, MHCI_MHCII) %>% 
+  pivot_longer(!c(Patient_ID, EBV_final), names_to = "ag_pres", values_to = "PCT")
+  
+p <- HRS_agpres_sum %>% ggplot(aes(x = factor(ag_pres, levels = c("MHCI_MHCII", "MHCII_only", "Impaired")), y = PCT, fill = factor(EBV_final, levels = c("Positive", "Negative")))) + 
+  geom_point(position = position_jitterdodge()) + 
+  geom_boxplot(outlier.shape = NA) + 
+  scale_fill_manual(values=c("#B85042", "#A7BEAE")) + 
+  theme_classic() + 
+  stat_compare_means(aes(group = EBV_final), method = "wilcox.test", label = "p.format", size = 5) + 
+  ylab("% HRS cells") + 
+  xlab("Antigen presentation machinery") + 
+  labs(fill = "EBV status")
+ggsave("agpres_singlecell.pdf", 
+       plot = p, 
+       path = "/Users/pourmalm/Desktop", 
+       device = "pdf", 
+       width = 200, 
+       height = 150, 
+       units = "mm")
+wilcox.test(PCT ~ EBV_final, data = HRS_agpres_sum %>% filter(ag_pres == "MHCII_only"),
+                   exact = FALSE)
 
 ```
 
