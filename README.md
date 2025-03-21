@@ -1,2 +1,2 @@
 # Hodgkin_lymphoma_project
-Integrating multiplexed IF, IHC, flow cytometry, NanoString, bulk RNA sequencing
+Analyzing and plotting NanoString, RNA seq, flow cytometry results for Hodgkin lymphoma project
